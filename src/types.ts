@@ -1,53 +1,27 @@
-export enum Subject {
-  MATH = 'Toán học',
-  PHYSICS = 'Vật lí',
-  CHEMISTRY = 'Hóa học',
-  DIARY = 'Nhật ký'
-}
+export type Subject = 'Toán học' | 'Vật lí' | 'Hóa học' | 'Nhật ký';
 
-export enum AgentType {
-  ORCHESTRATOR = 'Điều phối MAS',  // Tác tử Nhân 1: Bóc tách, chuẩn hóa đề
-  GIAI_NHANH_1S = 'Giải nhanh 1S', // Tác tử Nhân 2: Trả đáp án kết quả ngắn gọn
-  GIA_SU_AI = 'Gia sư AI',         // Tác tử Nhân 3: Trả lời giải chi tiết Socratic
-  LUYEN_SKILL = 'Luyện Skill',     // Tác tử Nhân 4: Trả 2 bài tập tương tự + lời giải gọn
-}
+export type ScreenState = 'LOGIN' | 'DASHBOARD' | 'INPUT' | 'RESULT';
 
-export interface QuizQuestion {
-  question: string;
-  options: string[];
-  answer: string;
-  solution: string;
-}
+export type InputModeText = 'CAMERA' | 'THƯ VIỆN' | 'GHI ÂM';
 
-export interface Professor3QuizResult {
-  quizzes: QuizQuestion[];
-}
-
-export interface Professor1Result {
-  finalAnswer: string;
-}
-
-export interface AnalysisResult {
-  content: string;
-  mindMap: string;
-}
-
-export type InputMode = 'CAMERA' | 'GALLERY' | 'VOICE';
-
-export interface UserProfile {
-  fullName: string;
+export interface StudentInfo {
+  name: string;
   className: string;
   school: string;
-  province: string;
+}
+
+export interface AgentResult {
+  orchestrator: string; // Tác tử 1: Điều phối MAS
+  giaiNhanh: string;    // Tác tử 2: Giải nhanh 1s
+  giaSu: string;        // Tác tử 3: Gia sư AI
+  luyenSkill: string;   // Tác tử 4: Luyện skill
 }
 
 export interface DiaryEntry {
-  date: string;
+  id: string;
+  timestamp: string;
+  student: StudentInfo;
   subject: Subject;
-  agentType: AgentType;
-  input: string;
-  image?: string;
-  resultContent: string;
-  studentInfo?: string;
-  professor3Quizzes?: Professor3QuizResult;
+  question: string;
+  results: AgentResult;
 }
