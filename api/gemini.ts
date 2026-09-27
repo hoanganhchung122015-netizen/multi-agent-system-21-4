@@ -1,4 +1,4 @@
-// api/gemini.ts - Cập nhật tên Model chuẩn của Gemini Flash
+// api/gemini.ts - Cập nhật model gemini-3.8-flash
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -56,9 +56,9 @@ export default async function handler(req: any, res: any) {
       };
     }
 
-    // 3. Gọi Endpoint với tên model chuẩn: gemini-2.5-flash
+    // 3. Gọi Endpoint với model gemini-3.8-flash
     const googleResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
