@@ -18,7 +18,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .map((key) => process.env[key])
     .filter(Boolean) as string[];
 
-  // Tách thêm trường hợp người dùng nhập nhiều key phân cách bằng dấu phẩy
   const apiKeys = Array.from(
     new Set(
       envKeys.flatMap((k) => k.split(',')).map((k) => k.trim()).filter(Boolean)
@@ -33,13 +32,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let lastErrorMessage = '';
 
-  // Xoay vòng qua từng API Key
   for (const apiKey of apiKeys) {
     try {
       const ai = new GoogleGenAI({ apiKey });
       
+      // ĐÃ SỬA: Đổi tên model sang gemini-2.5-flash chuẩn Google hỗ trợ hiện tại
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: systemInstruction ? { systemInstruction } : undefined,
       });
@@ -53,7 +52,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Trả về chính xác thông điệp lỗi từ phía Google
   return res.status(500).json({
     error: `Gọi API thất bại. Lỗi chi tiết từ Google: ${lastErrorMessage}`
   });
