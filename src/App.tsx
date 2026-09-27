@@ -1,720 +1,336 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
-// --- ENUMS & TYPES ---
-export enum Subject {
-  MATH = 'TOÁN HỌC',
-  PHYSICS = 'VẬT LÍ',
-  CHEMISTRY = 'HÓA HỌC',
-  BIOLOGY = 'SINH HỌC'
-}
+import { 
+  Subject, 
+  AgentType, 
+  InputMode, 
+  Professor1Result, 
+  Professor3QuizResult, 
+  DiaryEntry 
+} from './types';
+import { extractTextFromImageClient } from './services/ocrService';
+import { 
+  runOrchestrator, 
+  runGiaiNhanh1S, 
+  runGiaSuAI, 
+  runLuyenSkill 
+} from './services/geminiService';
 
-export enum AgentType {
-  SPEED = 'GIẢI NHANH 1S',
-  SOCRATIC = 'GIA SƯ AI',
-  SKILL = 'LUYỆN SKILL'
-}
-
-interface UserProfile {
-  fullName: string;
-  className: string;
-  school: string;
-  province: string;
-}
-
-interface Professor1Result {
-  finalAnswer: string;
-  casioSteps: string;
-}
-
-interface QuizItem {
-  question: string;
-  options: string[];
-  answer: string;
-  solution: string;
-}
-
-interface Professor3QuizResult {
-  quizzes: QuizItem[];
-}
-
-interface DiaryEntry {
-  id: string;
-  date: string;
-  subject: Subject;
-  agentType: AgentType;
-  input: string;
-  image?: string;
-  resultContent: string;
-  casioSteps?: string;
-  userInfo?: UserProfile;
-}
-
-const GOOGLE_SHEET_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby5E5_L510S92C3V4J46V3D17V-u5g_H9c2M8Vp8B1x_1X8f4y_1x2y3z4/exec";
-
-// --- CONTROLLER LAYER: Custom Hook (v16.5) ---
-const useAgentSystem = (selectedSubject: Subject | null) => {
-  const [allRawResults, setAllRawResults] = useState<Partial<Record<AgentType, string>>>({});
-  const [professor1Result, setProfessor1Result] = useState<Professor1Result | null>(null);
-  const [professor3QuizResult, setProfessor3QuizResult] = useState<Professor3QuizResult | null>(null);
+export default function App() {
+  const [selectedSubject, setSelectedSubject] = useState<Subject>(Subject.MATH);
+  const [selectedAgent, setSelectedAgent] = useState<AgentType>(AgentType.GIAI_NHANH_1S);
+  const [inputMode, setInputMode] = useState<InputMode>('GALLERY');
   
-  const [loading, setLoading] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState('');
+  const [inputText, setInputText] = useState<string>('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  
+  const [loading, setLoading] = useState<boolean>(false);
+  const [loadingStatus, setLoadingStatus] = useState<string>('');
+  
+  // Dữ liệu kết quả thực tế từ Multi-Agent
+  const [orchestratorResult, setOrchestratorResult] = useState<string>('');
+  const [giaiNhanhResult, setGiaiNhanhResult] = useState<Professor1Result | null>(null);
+  const [giaSuResult, setGiaSuResult] = useState<string>('');
+  const [luyenSkillResult, setLuyenSkillResult] = useState<Professor3QuizResult | null>(null);
 
-  const resetResults = useCallback(() => {
-    setAllRawResults({});
-    setProfessor1Result(null);
-    setProfessor3QuizResult(null);
-    setLoading(false);
-    setLoadingStatus('');
-  }, []);
+  // Nhật ký lưu trữ tại LocalStorage
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>(() => {
+    const saved = localStorage.getItem('sm_as_diary');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const runAgents = useCallback(async (
-    primaryAgent: AgentType,
-    allAgents: AgentType[],
-    voiceText: string,
-    image: string | null
-  ) => {
-    if (!selectedSubject || (!image && !voiceText)) return;
+  useEffect(() => {
+    localStorage.setItem('sm_as_diary', JSON.stringify(diaryEntries));
+  }, [diaryEntries]);
+
+  // Xử lý chọn ảnh từ máy/camera
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Reset sạch sẽ kết quả trước khi chạy đề mới
+  const resetResults = () => {
+    setOrchestratorResult('');
+    setGiaiNhanhResult(null);
+    setGiaSuResult('');
+    setLuyenSkillResult(null);
+  };
+
+  // LUỒNG ĐIỀU PHỐI CHÍNH (SM-AS WORKFLOW)
+  const handleExecute = async () => {
+    if (!inputText && !selectedImage) {
+      alert('Vui lòng nhập văn bản đề bài hoặc chọn hình ảnh!');
+      return;
+    }
 
     setLoading(true);
-    setLoadingStatus(`Đang kết nối Hệ thống Tác tử AI (${selectedSubject})...`);
-
-    const processAgent = async (agent: AgentType) => {
-      try {
-        let resText = "";
-        
-        if (agent === AgentType.SPEED) {
-          const mockProf1: Professor1Result = {
-            finalAnswer: `### Lời giải nhanh (${selectedSubject}):\nĐáp án đúng là **C. 5 cm**.\n\nBiểu thức li độ $x = 5\\cos(10\\pi t + \\pi/3)$ (cm) có biên độ $A = 5\\text{ cm}$.`,
-            casioSteps: "Bấm [MODE] -> [1] (Tính toán chuẩn)\nNhập hàm li độ để tính giá trị cực đại hoặc bấm SHIFT 7."
-          };
-          resText = JSON.stringify(mockProf1);
-          setProfessor1Result(mockProf1);
-          setAllRawResults(prev => ({ ...prev, [agent]: mockProf1.finalAnswer }));
-        } 
-        else if (agent === AgentType.SOCRATIC) {
-          resText = `### Phân tích tư duy Socratic (${selectedSubject}):\n1. **Nhận biết dạng bài**: Phương trình tổng quát $x = A\\cos(\\omega t + \\varphi)$.\n2. **Xác định các đại lượng**:\n   - Biên độ dao động: $A = 5\\text{ cm}$.\n   - Tần số góc: $\\omega = 10\\pi\\text{ rad/s}$.\n   - Pha ban đầu: $\\varphi = \\pi/3\\text{ rad}$.\n3. **Kết luận**: Chọn phương án có biên độ bằng 5 cm.`;
-          setAllRawResults(prev => ({ ...prev, [agent]: resText }));
-        } 
-        else if (agent === AgentType.SKILL) {
-          const mockProf3: Professor3QuizResult = {
-            quizzes: [
-              {
-                question: "Một vật dao động điều hòa theo phương trình $x = 8\\cos(4\\pi t - \\pi/6)$ (cm). Biên độ dao động của vật là:",
-                options: ["4 cm", "8 cm", "-8 cm", "16 cm"],
-                answer: "B",
-                solution: "So sánh với phương trình $x = A\\cos(\\omega t + \\varphi)$, ta thấy $A = 8\\text{ cm}$."
-              },
-              {
-                question: "Một chất điểm dao động với phương trình $x = 6\\cos(2\\pi t)$ (cm). Pha ban đầu của dao động là:",
-                options: ["0 rad", "2 rad", "6 rad", "\\pi rad"],
-                answer: "A",
-                solution: "Pha ban đầu $\\varphi = 0\\text{ rad}$."
-              }
-            ]
-          };
-          resText = JSON.stringify(mockProf3);
-          setProfessor3QuizResult(mockProf3);
-          setAllRawResults(prev => ({ ...prev, [agent]: "Bộ bài tập luyện skill tương tự đã sẵn sàng!" }));
-        }
-
-      } catch (error) {
-        setAllRawResults(prev => ({ ...prev, [agent]: "Chuyên gia AI đang bận, vui lòng thử lại." }));
-      }
-    };
-
-    await Promise.allSettled(allAgents.map(a => processAgent(a)));
-    setLoading(false);
-
-  }, [selectedSubject]);
-
-  return {
-    allRawResults,
-    professor1Result,
-    professor3QuizResult,
-    loading,
-    loadingStatus,
-    resetResults,
-    runAgents
-  };
-};
-
-// --- HELPER COMPONENTS ---
-const AgentLogo = React.memo(({ type, active }: { type: AgentType, active: boolean }) => {
-  const cls = `w-4 h-4 ${active ? 'text-blue-600' : 'text-slate-400'} transition-colors duration-300`;
-  switch (type) {
-    case AgentType.SPEED:
-      return <svg className={cls} viewBox="0 0 24 24" fill="currentColor"><path d="M13 10V3L4 14H11V21L20 10H13Z" /></svg>;
-    case AgentType.SOCRATIC:
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
-    case AgentType.SKILL:
-      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>;
-    default: return null;
-  }
-});
-
-// --- MAIN APP COMPONENT ---
-const App: React.FC = () => {
-  // 1. User Registration State
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [form, setForm] = useState<UserProfile>({ fullName: '', className: '', school: '', province: '' });
-  const [isSubmittingForm, setIsSubmittingForm] = useState(false);
-
-  // 2. Navigation & Data State (Chuẩn v16.5)
-  const [screen, setScreen] = useState<'HOME' | 'INPUT' | 'ANALYSIS' | 'DIARY'>('HOME');
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<AgentType>(AgentType.SPEED);
-  
-  const [image, setImage] = useState<string | null>(null);
-  const [voiceText, setVoiceText] = useState('');
-  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
-  
-  // Interactive Quiz State
-  const [userQuizAnswers, setUserQuizAnswers] = useState<Record<number, string>>({});
-  const [shownSolutions, setShownSolutions] = useState<Record<number, boolean>>({});
-
-  // Feedback State
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [isCurrentResultSaved, setIsCurrentResultSaved] = useState(false);
-
-  // Camera & Recording State
-  const [capturedImagePreview, setCapturedImagePreview] = useState<string | null>(null);
-  const [isImageCaptured, setIsImageCaptured] = useState<boolean>(false);
-  const [showCamera, setShowCamera] = useState(false);
-  const [isCounting, setIsCounting] = useState(false);
-  const [countdown, setCountdown] = useState(3);
-  const [isRecording, setIsRecording] = useState(false);
-
-  // Refs
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const agents = useMemo(() => Object.values(AgentType), []);
-
-  const { 
-    allRawResults, professor1Result, professor3QuizResult, loading, loadingStatus, 
-    resetResults, runAgents 
-  } = useAgentSystem(selectedSubject);
-
-  // Load User & Diary from LocalStorage
-  useEffect(() => {
-    const savedUser = localStorage.getItem('symbiotic_user');
-    if (savedUser) setUser(JSON.parse(savedUser));
-
-    const savedDiary = localStorage.getItem('symbiotic_diary');
-    if (savedDiary) setDiaryEntries(JSON.parse(savedDiary));
-  }, []);
-
-  // Form Registration Handler
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.fullName || !form.className || !form.school || !form.province) {
-      return alert("Vui lòng nhập đầy đủ thông tin!");
-    }
-    setIsSubmittingForm(true);
-    try {
-      localStorage.setItem('symbiotic_user', JSON.stringify(form));
-      setUser(form);
-
-      fetch(GOOGLE_SHEET_WEB_APP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      }).catch(err => console.error("Sheet sync error:", err));
-
-    } catch (err) {
-      alert("Đã xảy ra lỗi, vui lòng thử lại!");
-    } finally {
-      setIsSubmittingForm(false);
-    }
-  };
-
-  const resetAppState = useCallback(() => {
     resetResults();
-    setImage(null);
-    setVoiceText('');
-    setCapturedImagePreview(null);
-    setIsImageCaptured(false);
-    setUserQuizAnswers({});
-    setShownSolutions({});
-    setSelectedAgent(AgentType.SPEED);
-    setIsCurrentResultSaved(false);
-  }, [resetResults]);
 
-  // Điều hướng khi chọn Môn học
-  const handleSubjectSelect = useCallback((sub: Subject) => {
-    resetAppState();
-    setSelectedSubject(sub);
-    setScreen('INPUT');
-  }, [resetAppState]);
-
-  // Điều hướng mở Nhật ký
-  const handleOpenDiary = useCallback(() => {
-    setScreen('DIARY');
-  }, []);
-
-  // Điều hướng quay lại Menu chính (HOME) chuẩn v16.5
-  const handleGoHome = useCallback(() => {
-    resetAppState();
-    setSelectedSubject(null);
-    setScreen('HOME');
-  }, [resetAppState]);
-
-  // Camera Handler
-  const startCamera = useCallback(async () => {
-    setImage(null);
-    setVoiceText('');
-    setCapturedImagePreview(null);
-    setIsImageCaptured(false);
-    setIsCurrentResultSaved(false);
-    setShowCamera(true); 
-    setIsCounting(true); 
-    setCountdown(3);
-    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch { 
-      setShowCamera(false); 
-      setIsCounting(false);
-      alert("Không thể truy cập camera thiết bị.");
-    }
-  }, []);
+      let finalPromptForAgent1 = inputText;
 
-  useEffect(() => {
-    if (isCounting && countdown > 0) {
-      const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (isCounting && countdown === 0) {
-      if (videoRef.current && canvasRef.current) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        canvasRef.current.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-        setCapturedImagePreview(canvasRef.current.toDataURL('image/jpeg', 0.8)); 
-        setIsImageCaptured(true);
-        (videoRef.current.srcObject as MediaStream)?.getTracks().forEach(t => t.stop());
-        setShowCamera(false); 
-        setIsCounting(false);
+      // Bước 1: Tiền xử lý OCR nếu có ảnh
+      if (selectedImage) {
+        setLoadingStatus('Tác tử 1: Đang chạy OCR bóc tách chữ từ ảnh...');
+        const ocrText = await extractTextFromImageClient(selectedImage);
+        if (ocrText) {
+          finalPromptForAgent1 = `[Đề bài trích xuất từ ảnh]: ${ocrText}\n${inputText}`;
+        }
       }
-    }
-  }, [isCounting, countdown]);
 
-  // Voice Recording Handler
-  const toggleRecording = useCallback(() => {
-    setImage(null);
-    setCapturedImagePreview(null);
-    setIsImageCaptured(false);
-    setIsCurrentResultSaved(false);
+      // Bước 2: Tác tử 1 (ORCHESTRATOR) chuẩn hóa đề & lập Mindmap
+      setLoadingStatus('Tác tử 1 (Điều phối MAS): Đang chuẩn hóa đề bài & công thức LaTeX...');
+      const cleanedPrompt = await runOrchestrator(
+        selectedSubject, 
+        finalPromptForAgent1, 
+        selectedImage || undefined
+      );
+      setOrchestratorResult(cleanedPrompt);
 
-    if (isRecording) {
-      recognitionRef.current?.stop();
-    } else {
-      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (!SR) return alert("Trình duyệt không hỗ trợ nhận diện giọng nói!");
-      const r = new SR(); 
-      r.lang = 'vi-VN';
-      r.onstart = () => setIsRecording(true);
-      r.onend = () => setIsRecording(false);
-      r.onresult = (e: any) => {
-        setVoiceText(e.results[0][0].transcript);
-        setImage(null);
+      // Bước 3: Chạy song song các Tác tử Chuyên môn dựa trên đề bài đã bóc tách chuẩn
+      setLoadingStatus('Các Tác tử chuyên môn đang giải song song...');
+      
+      const [resGiaiNhanh, resGiaSu, resLuyenSkill] = await Promise.all([
+        runGiaiNhanh1S(selectedSubject, cleanedPrompt),
+        runGiaSuAI(selectedSubject, cleanedPrompt),
+        runLuyenSkill(selectedSubject, cleanedPrompt)
+      ]);
+
+      setGiaiNhanhResult(resGiaiNhanh);
+      setGiaSuResult(resGiaSu);
+      setLuyenSkillResult(resLuyenSkill);
+
+      // Bước 4: Tự động lưu vào Nhật ký học tập
+      const newEntry: DiaryEntry = {
+        date: new Date().toLocaleString('vi-VN'),
+        subject: selectedSubject,
+        agentType: selectedAgent,
+        input: inputText || 'Bài tập dạng hình ảnh',
+        image: selectedImage || undefined,
+        resultContent: resGiaSu || resGiaiNhanh.finalAnswer,
+        professor3Quizzes: resLuyenSkill
       };
-      recognitionRef.current = r; 
-      r.start();
+
+      setDiaryEntries((prev) => [newEntry, ...prev]);
+
+    } catch (error: any) {
+      console.error('Lỗi luồng MAS:', error);
+      alert(`Đã xảy ra lỗi: ${error.message || 'Không thể kết nối với AI'}`);
+    } finally {
+      setLoading(false);
+      setLoadingStatus('');
     }
-  }, [isRecording]);
-
-  const handleRunAnalysis = useCallback(() => {
-     if (!selectedSubject || (!image && !voiceText) || isImageCaptured) return alert("Vui lòng chụp ảnh, chọn ảnh hoặc nhập giọng nói!");
-     setScreen('ANALYSIS');
-     setIsCurrentResultSaved(false);
-     runAgents(selectedAgent, agents, voiceText, image);
-  }, [selectedSubject, image, voiceText, isImageCaptured, selectedAgent, agents, runAgents]);
-
-  // Lưu bài học vào Nhật ký
-  const handleSaveToDiary = useCallback(() => {
-    if (!selectedSubject || isCurrentResultSaved) return;
-
-    let resultContentToSave = allRawResults[selectedAgent] || "Không có dữ liệu";
-    let casioStepsToSave: string | undefined = undefined;
-
-    if (selectedAgent === AgentType.SPEED && professor1Result) {
-      resultContentToSave = professor1Result.finalAnswer;
-      casioStepsToSave = professor1Result.casioSteps;
-    }
-
-    const newEntry: DiaryEntry = {
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString('vi-VN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
-      subject: selectedSubject,
-      agentType: selectedAgent,
-      input: voiceText || "Đề bài dạng hình ảnh",
-      image: image || undefined,
-      resultContent: resultContentToSave,
-      casioSteps: casioStepsToSave,
-      userInfo: user || undefined
-    };
-
-    const updatedDiary = [newEntry, ...diaryEntries];
-    setDiaryEntries(updatedDiary);
-    localStorage.setItem('symbiotic_diary', JSON.stringify(updatedDiary));
-    setShowSaveSuccess(true);
-    setIsCurrentResultSaved(true);
-    setTimeout(() => setShowSaveSuccess(false), 2000);
-  }, [selectedSubject, allRawResults, selectedAgent, isCurrentResultSaved, professor1Result, voiceText, image, user, diaryEntries]);
-
-  const markdownConfig = useMemo(() => ({
-    remarkPlugins: [remarkMath],
-    rehypePlugins: [rehypeKatex]
-  }), []);
-
-  // RENDER FORM GHI DANH
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white max-w-md w-full rounded-3xl p-8 shadow-2xl border border-slate-200 animate-in fade-in">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center text-white text-2xl font-black mb-3 shadow-lg">
-              AI
-            </div>
-            <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">Ghi Danh Học Sinh</h1>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Hệ thống Tác tử AI Học tập Thông minh</p>
-          </div>
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Họ và Tên</label>
-              <input type="text" required placeholder="Ví dụ: Nguyễn Văn A" value={form.fullName} onChange={e => setForm({...form, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-blue-600 bg-slate-50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Lớp</label>
-              <input type="text" required placeholder="Ví dụ: 12A1" value={form.className} onChange={e => setForm({...form, className: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-blue-600 bg-slate-50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Trường THPT</label>
-              <input type="text" required placeholder="Ví dụ: THPT Mai Sơn" value={form.school} onChange={e => setForm({...form, school: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-blue-600 bg-slate-50" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Tỉnh / Thành phố</label>
-              <input type="text" required placeholder="Ví dụ: Sơn La" value={form.province} onChange={e => setForm({...form, province: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-blue-600 bg-slate-50" />
-            </div>
-            <button type="submit" disabled={isSubmittingForm} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold uppercase text-xs tracking-wider shadow-lg hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 mt-2">
-              {isSubmittingForm ? 'Đang đồng bộ...' : 'Bắt đầu Học tập'}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex justify-center">
-      <div className="w-full max-w-md bg-white min-h-screen flex flex-col shadow-2xl relative">
-        
-        {/* HEADER CHUẨN v16.5: LUÔN CÓ NÚT VỀ MENU HOẶC NÚT NHẬT KÝ */}
-        <header className="p-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-20">
-          {screen !== 'HOME' ? (
-            <button onClick={handleGoHome} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl active:scale-90 transition-transform">
-              <span>← Menu chính</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-black text-xs">AI</div>
-              <span className="font-black text-sm text-slate-800 tracking-tight">SYMBIOTIC MAS</span>
-            </div>
-          )}
-          
-          <div className="flex items-center gap-3">
-            {screen === 'HOME' && (
-              <button onClick={handleOpenDiary} className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1 active:scale-90 transition-transform">
-                📓 Nhật ký
-              </button>
-            )}
-            <div className="text-right">
-              <div className="text-xs font-bold text-slate-800">{user.fullName}</div>
-              <div className="text-[10px] text-slate-400 font-medium">{user.className}</div>
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
+      <header className="max-w-5xl mx-auto mb-8 text-center">
+        <h1 className="text-3xl font-extrabold text-blue-700 tracking-tight">
+          SYMBIOTIC MULTI-AGENT SYSTEM (SM-AS)
+        </h1>
+        <p className="text-slate-600 mt-2">
+          Hệ thống Tác tử AI Cộng sinh Hỗ trợ Học tập Môn Toán, Lý, Hóa
+        </p>
+      </header>
+
+      <main className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* CỘT BÊN TRÁI: ĐIỀU KHIỂN & ĐẦU VÀO */}
+        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+          {/* Chọn Môn */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">1. Chọn Môn học</label>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.values(Subject).map((sub) => (
+                <button
+                  key={sub}
+                  onClick={() => setSelectedSubject(sub)}
+                  className={`py-2 px-3 rounded-lg text-sm font-semibold transition-all ${
+                    selectedSubject === sub
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {sub}
+                </button>
+              ))}
             </div>
           </div>
-        </header>
 
-        {/* MAIN CONTENT */}
-        <main className="flex-1 p-4 overflow-y-auto">
-          
-          {/* SCREEN 1: HOME - ĐỦ 4 MÔN HỌC CHUẨN (TOÁN, LÝ, HÓA, SINH) */}
-          {screen === 'HOME' && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-6 text-white shadow-xl">
-                <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">Hệ thống Tác tử AI</span>
-                <h2 className="text-2xl font-black mt-1">Xin chào, {user.fullName}!</h2>
-                <p className="text-xs text-blue-100 mt-1 opacity-90">Chọn môn học để gửi đề bài cho các Tác tử AI phân tích.</p>
-              </div>
+          {/* Chọn Tác tử Chế độ xem ưu tiên */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">2. Chế độ Tác tử xem trước</label>
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value as AgentType)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              {Object.values(AgentType).map((agent) => (
+                <option key={agent} value={agent}>{agent}</option>
+              ))}
+            </select>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                {[
-                  { name: Subject.MATH, color: 'bg-indigo-600', icon: '📐' },
-                  { name: Subject.PHYSICS, color: 'bg-violet-600', icon: '⚛️' },
-                  { name: Subject.CHEMISTRY, color: 'bg-emerald-600', icon: '🧪' },
-                  { name: Subject.BIOLOGY, color: 'bg-teal-600', icon: '🧬' },
-                ].map((sub) => (
-                  <button key={sub.name} onClick={() => handleSubjectSelect(sub.name as Subject)} className={`${sub.color} aspect-square rounded-[2rem] flex flex-col items-center justify-center text-white shadow-lg active:scale-95 transition-all p-4`}>
-                    <span className="text-4xl mb-2">{sub.icon}</span>
-                    <span className="text-xs font-black uppercase tracking-tight">{sub.name}</span>
-                  </button>
-                ))}
+          {/* Đầu vào Ảnh/Text */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">3. Nhập Đề bài / Tải Ảnh</label>
+            <textarea
+              rows={4}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="Nhập câu hỏi hoặc công thức đề bài..."
+              className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 mb-3"
+            />
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+
+            {selectedImage && (
+              <div className="mt-3 relative">
+                <img src={selectedImage} alt="Đề bài" className="w-full h-40 object-cover rounded-lg border" />
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 text-xs"
+                >
+                  ✕ Xóa ảnh
+                </button>
               </div>
+            )}
+          </div>
+
+          {/* Nút Thực Hiện */}
+          <button
+            onClick={handleExecute}
+            disabled={loading}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-bold rounded-xl shadow-md transition-all text-center"
+          >
+            {loading ? 'Đang phân tích...' : 'Thực hiện (Phối hợp MAS)'}
+          </button>
+
+          {loadingStatus && (
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs animate-pulse">
+              {loadingStatus}
             </div>
           )}
+        </section>
 
-          {/* SCREEN 2: INPUT */}
-          {screen === 'INPUT' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-400">Môn đang chọn:</span>
-                <span className="text-xs font-black uppercase text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{selectedSubject}</span>
-              </div>
-
-              <div className="w-full aspect-[16/10] bg-slate-50 rounded-[2rem] flex items-center justify-center overflow-hidden border-2 border-slate-200 relative shadow-inner">
-                {showCamera ? (
-                  <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                ) : capturedImagePreview ? (
-                  <img src={capturedImagePreview} className="p-2 h-full object-contain" alt="Ảnh đã chụp" />
-                ) : image ? (
-                  <img src={image} className="p-2 h-full object-contain" alt="Ảnh đề bài" />
-                ) : (
-                  <div className="p-8 text-center text-slate-500 font-medium text-xs leading-relaxed">
-                    {voiceText ? (
-                      <span className="text-blue-600 font-bold text-sm">"{voiceText}"</span>
-                    ) : (
-                      "Vui lòng chụp ảnh, tải ảnh lên hoặc bấm ghi âm đề bài..."
-                    )}
-                  </div>
-                )}
-                {isCounting && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-6xl font-black text-white drop-shadow-lg">
-                    {countdown}
-                  </div>
-                )}
-              </div>
-
-              {/* ACTION BUTTONS */}
-              <div className="flex justify-between items-center px-2">
-                {isImageCaptured ? (
-                  <>
-                    <button onClick={() => { setCapturedImagePreview(null); setIsImageCaptured(false); startCamera(); }} className="flex-1 mr-2 py-4 rounded-2xl bg-rose-500 text-white font-bold text-xs uppercase shadow-md active:scale-95 transition-all">
-                      🔄 Chụp lại
-                    </button>
-                    <button onClick={() => { if (capturedImagePreview) { setImage(capturedImagePreview); setVoiceText(''); setCapturedImagePreview(null); setIsImageCaptured(false); } }} className="flex-1 ml-2 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-xs uppercase shadow-md active:scale-95 transition-all">
-                      ✅ Lưu ảnh này
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {[
-                      { l: 'Chụp ảnh', i: '📸', a: startCamera }, 
-                      { l: 'Thư viện', i: '🖼️', a: () => fileInputRef.current?.click() }, 
-                      { l: isRecording ? 'Đang ghi' : 'Ghi âm', i: isRecording ? '⏹️' : '🎙️', a: toggleRecording }
-                    ].map((it) => (
-                      <button key={it.l} onClick={it.a} className="flex flex-col items-center gap-1 group">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-700 shadow-sm flex items-center justify-center text-xl group-active:scale-90 transition-transform">
-                          {it.i}
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">{it.l}</span>
-                      </button>
-                    ))}
-                    
-                    <button onClick={handleRunAnalysis} disabled={(!image && !voiceText) || isImageCaptured} className="flex flex-col items-center gap-1 group disabled:opacity-30">
-                      <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white shadow-lg flex items-center justify-center text-xl group-active:scale-90 transition-transform">
-                        🚀
-                      </div>
-                      <span className="text-[10px] font-black text-blue-600 uppercase">Thực hiện</span>
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <canvas ref={canvasRef} className="hidden" />
-              <input type="file" ref={fileInputRef} onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                    setImage(e.target?.result as string);
-                    setVoiceText('');
-                  };
-                  reader.readAsDataURL(file);
-                }
-              }} className="hidden" accept="image/*" />
-            </div>
-          )}
-
-          {/* SCREEN 3: ANALYSIS */}
-          {screen === 'ANALYSIS' && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              
-              {/* TAB SELECTION */}
-              <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
-                {agents.map((ag) => (
-                  <button key={ag} onClick={() => setSelectedAgent(ag)} className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[10px] font-black uppercase transition-all ${selectedAgent === ag ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                    <AgentLogo type={ag} active={selectedAgent === ag} />
-                    <span>{ag}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* RESULT DISPLAY */}
-              <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm min-h-[400px] relative">
-                {loading ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center space-y-3 bg-white/90 rounded-3xl z-10">
-                    <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{loadingStatus}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">{selectedAgent}</span>
-                      
-                      <button onClick={handleSaveToDiary} disabled={isCurrentResultSaved} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-90 transition-transform disabled:opacity-50">
-                        {isCurrentResultSaved ? '✓ Đã lưu Nhật ký' : '💾 Lưu Nhật ký'}
-                      </button>
-                    </div>
-
-                    {showSaveSuccess && (
-                      <div className="bg-emerald-50 text-emerald-700 text-xs font-bold p-3 rounded-xl text-center animate-in fade-in">
-                        Đã lưu thành công vào Nhật ký học tập!
-                      </div>
-                    )}
-
-                    {/* PROF 1: SPEED RESULT */}
-                    {selectedAgent === AgentType.SPEED && (
-                      <div className="space-y-4">
-                        <div className="prose prose-slate max-w-none text-sm math-font">
-                          <ReactMarkdown remarkPlugins={markdownConfig.remarkPlugins} rehypePlugins={markdownConfig.rehypePlugins}>
-                            {professor1Result?.finalAnswer || "Đang tải lời giải..."}
-                          </ReactMarkdown>
-                        </div>
-
-                        {professor1Result?.casioSteps && (
-                          <div className="bg-emerald-50/70 p-4 rounded-2xl border-l-4 border-emerald-500">
-                            <h4 className="text-xs font-black uppercase text-emerald-700 mb-1">Thao tác Casio 580VN X:</h4>
-                            <pre className="text-xs text-slate-700 whitespace-pre-wrap font-sans">{professor1Result.casioSteps}</pre>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* PROF 2: SOCRATIC TUTOR */}
-                    {selectedAgent === AgentType.SOCRATIC && (
-                      <div className="prose prose-slate max-w-none text-sm math-font">
-                        <ReactMarkdown remarkPlugins={markdownConfig.remarkPlugins} rehypePlugins={markdownConfig.rehypePlugins}>
-                          {allRawResults[AgentType.SOCRATIC] || "Đang soạn phân tích..."}
-                        </ReactMarkdown>
-                      </div>
-                    )}
-
-                    {/* PROF 3: SKILL QUIZ INTERACTIVE */}
-                    {selectedAgent === AgentType.SKILL && (
-                      <div className="space-y-6">
-                        {professor3QuizResult?.quizzes.map((q, idx) => (
-                          <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 space-y-3">
-                            <div className="font-bold text-xs text-slate-800">
-                              Câu {idx + 1}: <ReactMarkdown remarkPlugins={markdownConfig.remarkPlugins} rehypePlugins={markdownConfig.rehypePlugins}>{q.question}</ReactMarkdown>
-                            </div>
-
-                            <div className="grid gap-2">
-                              {q.options.map((opt, optIdx) => {
-                                const optLetter = String.fromCharCode(65 + optIdx);
-                                const isSelected = userQuizAnswers[idx] === optLetter;
-                                const isCorrect = q.answer === optLetter;
-
-                                let btnClass = "bg-white border-slate-200 text-slate-700";
-                                if (userQuizAnswers[idx]) {
-                                  if (isSelected && isCorrect) btnClass = "bg-emerald-500 text-white border-emerald-500 font-bold";
-                                  else if (isSelected && !isCorrect) btnClass = "bg-rose-500 text-white border-rose-500 font-bold";
-                                  else if (isCorrect) btnClass = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
-                                }
-
-                                return (
-                                  <button key={optIdx} disabled={!!userQuizAnswers[idx]} onClick={() => setUserQuizAnswers(prev => ({ ...prev, [idx]: optLetter }))} className={`w-full text-left p-3 rounded-xl border text-xs transition-all ${btnClass}`}>
-                                    <span className="font-black mr-2">{optLetter}.</span> {opt}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {userQuizAnswers[idx] && (
-                              <div className="pt-2">
-                                <button onClick={() => setShownSolutions(prev => ({ ...prev, [idx]: !prev[idx] }))} className="text-[10px] font-bold text-blue-600 underline">
-                                  {shownSolutions[idx] ? 'Ẩn lời giải' : 'Hiện lời giải chi tiết'}
-                                </button>
-                                {shownSolutions[idx] && (
-                                  <div className="mt-2 p-3 bg-blue-50/50 rounded-xl text-xs text-slate-700 font-medium">
-                                    {q.solution}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* SCREEN 4: DIARY (NHẬT KÝ HỌC TẬP TÁCH BIỆT CHUẨN v16.5) */}
-          {screen === 'DIARY' && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Nhật ký Lịch sử Học tập</h3>
-                <span className="text-xs font-bold text-slate-400">{diaryEntries.length} bài đã lưu</span>
-              </div>
-
+        {/* CỘT BÊN PHẢI: HIỂN THỊ KẾT QUẢ KHI CÁC TÁC TỬ PHẢN HỒI */}
+        <section className="md:col-span-2 space-y-6">
+          {/* TAB NHẬT KÝ HỌC TẬP */}
+          {selectedSubject === Subject.DIARY ? (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+              <h2 className="text-xl font-bold text-slate-800 border-b pb-2">Nhật ký Học tập (DIARY)</h2>
               {diaryEntries.length === 0 ? (
-                <div className="py-16 text-center text-slate-400 italic text-xs bg-white rounded-3xl border border-slate-100">
-                  Chưa có bài tập nào được lưu vào nhật ký.
-                </div>
+                <p className="text-slate-500 text-sm">Chưa có nhật ký bài tập nào được lưu.</p>
               ) : (
-                diaryEntries.map((item) => (
-                  <div key={item.id} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-3">
-                    <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold">
-                      <span>{item.date}</span>
-                      <span className="text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full uppercase">{item.subject}</span>
+                diaryEntries.map((entry, index) => (
+                  <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm space-y-2">
+                    <div className="flex justify-between font-semibold text-blue-600">
+                      <span>[{entry.subject}] - {entry.agentType}</span>
+                      <span className="text-xs text-slate-400">{entry.date}</span>
                     </div>
-
-                    {item.image && (
-                      <img src={item.image} alt="Đề bài" className="max-h-36 rounded-xl object-contain bg-slate-50 border p-1" />
-                    )}
-
-                    <div className="prose prose-slate max-w-none text-xs math-font">
-                      <ReactMarkdown remarkPlugins={markdownConfig.remarkPlugins} rehypePlugins={markdownConfig.rehypePlugins}>
-                        {item.resultContent}
+                    <p className="font-medium text-slate-700">Đầu vào: {entry.input}</p>
+                    <div className="p-3 bg-white rounded border prose prose-sm max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {entry.resultContent}
                       </ReactMarkdown>
                     </div>
-
-                    {item.casioSteps && (
-                      <div className="bg-emerald-50 p-3 rounded-xl text-[11px] text-emerald-800">
-                        <span className="font-bold block mb-1">Hướng dẫn Casio:</span>
-                        {item.casioSteps}
-                      </div>
-                    )}
                   </div>
                 ))
               )}
             </div>
-          )}
+          ) : (
+            <>
+              {/* TÁC TỬ 1: ĐIỀU PHỐI & CÔNG THỨC CHUẨN */}
+              {orchestratorResult && (
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-200">
+                  <h3 className="text-sm font-bold text-blue-700 mb-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                    Tác tử 1 (Điều phối MAS) - Bóc tách đề bài chuẩn LaTeX:
+                  </h3>
+                  <div className="prose prose-sm max-w-none text-slate-700 bg-slate-50 p-3 rounded-lg border">
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {orchestratorResult}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
 
-        </main>
-      </div>
+              {/* TÁC TỬ 2: GIẢI NHANH 1S */}
+              {giaiNhanhResult && (
+                <div className="bg-emerald-50 p-5 rounded-2xl shadow-sm border border-emerald-200">
+                  <h3 className="text-sm font-bold text-emerald-800 mb-2">
+                    Tác tử 2 (Giải nhanh 1S) - Kết quả ngắn gọn:
+                  </h3>
+                  <div className="text-lg font-extrabold text-emerald-900">
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {giaiNhanhResult.finalAnswer}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {/* TÁC TỬ 3: GIA SƯ AI SOCRATIC */}
+              {giaSuResult && (
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                  <h3 className="text-sm font-bold text-indigo-700 mb-2">
+                    Tác tử 3 (Gia sư AI) - Lời giải chi tiết Socratic:
+                  </h3>
+                  <div className="prose prose-slate max-w-none text-sm bg-slate-50 p-4 rounded-xl border">
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {giaSuResult}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {/* TÁC TỬ 4: LUYỆN SKILL (BÀI TẬP TƯƠNG TỰ) */}
+              {luyenSkillResult && luyenSkillResult.quizzes.length > 0 && (
+                <div className="bg-amber-50 p-5 rounded-2xl shadow-sm border border-amber-200 space-y-4">
+                  <h3 className="text-sm font-bold text-amber-800">
+                    Tác tử 4 (Luyện Skill) - 2 Bài tập tương tự rèn luyện:
+                  </h3>
+                  {luyenSkillResult.quizzes.map((quiz, qIdx) => (
+                    <div key={qIdx} className="bg-white p-4 rounded-xl border border-amber-100 text-sm space-y-2">
+                      <p className="font-bold text-slate-800">Câu {qIdx + 1}: {quiz.question}</p>
+                      <div className="grid grid-cols-2 gap-2 my-2">
+                        {quiz.options.map((opt, oIdx) => (
+                          <div key={oIdx} className="p-2 bg-slate-50 rounded border text-xs">
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs font-semibold text-emerald-700">Đáp án: {quiz.answer}</p>
+                      <details className="text-xs text-slate-600 cursor-pointer mt-1">
+                        <summary className="font-semibold text-blue-600">Xem lời giải ngắn</summary>
+                        <div className="p-2 bg-slate-50 rounded mt-1 border">
+                          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                            {quiz.solution}
+                          </ReactMarkdown>
+                        </div>
+                      </details>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      </main>
     </div>
   );
-};
-
-export default App;
+}
