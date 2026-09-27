@@ -12,13 +12,13 @@ import {
   Professor3QuizResult, 
   DiaryEntry 
 } from '../types';
-import { extractTextFromImageClient } from './services/ocrService';
+import { extractTextFromImageClient } from '../services/ocrService';
 import { 
   runOrchestrator, 
   runGiaiNhanh1S, 
   runGiaSuAI, 
   runLuyenSkill 
-} from './services/geminiService';
+} from '../services/geminiService';
 
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState<Subject>(Subject.MATH);
