@@ -1,18 +1,17 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { prompt, systemInstruction } = req.body;
+  const { prompt, systemInstruction } = req.body || {};
 
   if (!prompt) {
     return res.status(400).json({ error: 'Missing prompt in request body' });
   }
 
-  // Quét tự động tất cả các biến môi trường có tên chứa GEMINI hoặc API_KEY
+  // Quét tự động tất cả các biến môi trường chứa GEMINI hoặc API_KEY
   const envKeys = Object.keys(process.env)
     .filter((key) => key.includes('GEMINI') || key.includes('API_KEY'))
     .map((key) => process.env[key])
@@ -36,9 +35,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const ai = new GoogleGenAI({ apiKey });
       
-      // ĐÃ SỬA: Đổi tên model sang gemini-2.5-flash chuẩn Google hỗ trợ hiện tại
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: prompt,
         config: systemInstruction ? { systemInstruction } : undefined,
       });
