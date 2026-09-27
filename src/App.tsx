@@ -142,6 +142,10 @@ export default function App() {
       
       {/* Header dùng chung */}
       <header className="text-center my-4">
+  {/* Dòng chữ mới thêm vào ở đây */}
+  <p className="text-base font-bold text-[#1E3A8A] uppercase tracking-wide mb-1">
+    NGÀY HỘI ĐỔI MỚI SÁNG TẠO VÀ CHUYỂN ĐỔI SỐ TỈNH SƠN LA NĂM 2026
+  </p>
         <h1 className="text-3xl font-black text-[#1E3A8A] tracking-tight">SYMBIOTIC AI</h1>
         <p className="text-xs font-bold text-[#64748B] tracking-widest uppercase">MULTI AGENT SYSTEMS</p>
         <p className="text-sm italic text-[#4F46E5] font-medium mt-1">Gia sư ảo thông minh của mọi thế hệ học sinh</p>
