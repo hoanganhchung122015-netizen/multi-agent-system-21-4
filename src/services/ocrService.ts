@@ -1,19 +1,14 @@
 import { createWorker } from 'tesseract.js';
 
-/**
- * Trích xuất văn bản từ hình ảnh Base64 ngay trên Trình duyệt (Client-side)
- * Tiết kiệm Token hình ảnh gửi lên Gemini API.
- */
-export const extractTextFromImageClient = async (base64Image: string): Promise<string> => {
+export async function extractTextFromImageClient(file: File): Promise<string> {
+  const worker = await createWorker('vie+eng');
   try {
-    const worker = await createWorker('vie+eng');
-    const ret = await worker.recognize(base64Image);
+    const { data: { text } } = await worker.recognize(file);
     await worker.terminate();
-    
-    const extractedText = ret.data.text.trim();
-    return extractedText.length > 10 ? extractedText : "";
+    return text.trim();
   } catch (error) {
-    console.warn("Lỗi OCR client, tự động chuyển sang luồng dự phòng nhận diện trực tiếp bằng AI Vision:", error);
-    return "";
+    await worker.terminate();
+    console.error("OCR Error:", error);
+    throw new Error("Không thể đọc được chữ từ ảnh này. Vui lòng thử lại với ảnh rõ hơn.");
   }
-};
+}
