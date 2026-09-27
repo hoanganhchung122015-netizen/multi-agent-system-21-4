@@ -11,7 +11,7 @@ import { runFullMAS } from './services/geminiService';
 export default function App() {
   const [screen, setScreen] = useState<ScreenState>('LOGIN');
   const [student, setStudent] = useState<StudentInfo>({
-    name: 'THUY LIN HOANG',
+    name: 'THUY LINH HOANG',
     className: '12A',
     school: 'THPT MAI SƠN - SƠN LA'
   });
