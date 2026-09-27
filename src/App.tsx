@@ -23,7 +23,7 @@ export default function App() {
   const [loadingText, setLoadingText] = useState<string>('');
   
   const [agentResults, setAgentResults] = useState<AgentResult | null>(null);
-  const [activeTab, setActiveTab] = useState<'ORCHESTRATOR' | 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL'>('GIAI_NHANH');
+  const [activeTab, setActiveTab] = useState<'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL'>('GIAI_NHANH');
   const [diaryList, setDiaryList] = useState<DiaryEntry[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +128,7 @@ export default function App() {
     }
   };
 
-  const handleTabClick = (tab: 'ORCHESTRATOR' | 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL') => {
+  const handleTabClick = (tab: 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL') => {
     if (tab === 'GIA_SU' || tab === 'LUYEN_SKILL') {
       alert('Tính năng đang được tối ưu cho phiên bản nâng cao!');
       return;
@@ -136,14 +136,26 @@ export default function App() {
     setActiveTab(tab);
   };
 
-  // Lấy nội dung hiển thị an toàn theo tab đang chọn
+  // Hàm trích xuất chuẩn xác CHỈ BẮT ĐẦU TỪ "ĐÁP ÁN"
+  const extractOnlyAnswer = (text: string) => {
+    if (!text) return 'Không có dữ liệu đáp án.';
+    
+    const regex = /(ĐÁP ÁN CUỐI CÙNG|ĐÁP ÁN|KẾT QUẢ CUỐI CÙNG):?/i;
+    const match = text.match(regex);
+    
+    if (match && match.index !== undefined) {
+      return text.substring(match.index).trim();
+    }
+    
+    return text.trim();
+  };
+
+  // Lấy nội dung hiển thị cho từng tab
   const getActiveContent = () => {
     if (!agentResults) return 'Đang tải kết quả...';
     switch (activeTab) {
-      case 'ORCHESTRATOR':
-        return agentResults.orchestrator || 'Không có dữ liệu điều phối.';
       case 'GIAI_NHANH':
-        return agentResults.giaiNhanh || 'Không có dữ liệu giải nhanh.';
+        return extractOnlyAnswer(agentResults.giaiNhanh || '');
       case 'GIA_SU':
         return agentResults.giaSu || 'Tính năng đang cập nhật.';
       case 'LUYEN_SKILL':
@@ -350,14 +362,8 @@ export default function App() {
 
               {!isProcessing && agentResults && (
                 <div className="space-y-3">
-                  {/* TAB TÁC TỬ */}
-                  <div className="grid grid-cols-4 gap-1 bg-slate-200/60 p-1 rounded-2xl text-[10px] font-extrabold text-center">
-                    <button
-                      onClick={() => handleTabClick('ORCHESTRATOR')}
-                      className={`py-2 rounded-xl transition-all ${activeTab === 'ORCHESTRATOR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                    >
-                      ĐIỀU PHỐI
-                    </button>
+                  {/* CÒN ĐÚNG 3 TAB: ẨN HOÀN TOÀN TÁC TỬ ĐIỀU PHỐI */}
+                  <div className="grid grid-cols-3 gap-1 bg-slate-200/60 p-1 rounded-2xl text-[10px] font-extrabold text-center">
                     <button
                       onClick={() => handleTabClick('GIAI_NHANH')}
                       className={`py-2 rounded-xl transition-all ${activeTab === 'GIAI_NHANH' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500'}`}
@@ -378,8 +384,8 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Nội dung kết quả an toàn */}
-                  <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 min-h-[300px] text-sm text-slate-800 leading-relaxed overflow-x-auto">
+                  {/* KHUNG HIỂN THỊ CHỈ ĐÁP ÁN CUỐI CÙNG */}
+                  <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 min-h-[150px] text-base text-slate-800 font-bold leading-relaxed flex items-center justify-center text-center">
                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                       {getActiveContent()}
                     </ReactMarkdown>
