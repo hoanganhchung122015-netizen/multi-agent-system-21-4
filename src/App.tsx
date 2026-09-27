@@ -128,12 +128,29 @@ export default function App() {
     }
   };
 
-  // Khóa không cho bấm sang tab Gia sư AI & Luyện Skill (bấm vào giữ nguyên)
   const handleTabClick = (tab: 'ORCHESTRATOR' | 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL') => {
     if (tab === 'GIA_SU' || tab === 'LUYEN_SKILL') {
-      return; // Bấm không phản hồi, giữ nguyên màn hình hiện tại
+      alert('Tính năng đang được tối ưu cho phiên bản nâng cao!');
+      return;
     }
     setActiveTab(tab);
+  };
+
+  // Lấy nội dung hiển thị an toàn theo tab đang chọn
+  const getActiveContent = () => {
+    if (!agentResults) return 'Đang tải kết quả...';
+    switch (activeTab) {
+      case 'ORCHESTRATOR':
+        return agentResults.orchestrator || 'Không có dữ liệu điều phối.';
+      case 'GIAI_NHANH':
+        return agentResults.giaiNhanh || 'Không có dữ liệu giải nhanh.';
+      case 'GIA_SU':
+        return agentResults.giaSu || 'Tính năng đang cập nhật.';
+      case 'LUYEN_SKILL':
+        return agentResults.luyenSkill || 'Tính năng đang cập nhật.';
+      default:
+        return '';
+    }
   };
 
   return (
@@ -141,9 +158,9 @@ export default function App() {
       
       {/* Header dùng chung */}
       <header className="text-center my-4">
-       <p className="text-base font-bold text-[#1E3A8A] uppercase tracking-wide mb-1">
-    NGÀY HỘI ĐỔI MỚI SÁNG TẠO VÀ CHUYỂN ĐỔI SỐ TỈNH SƠN LA NĂM 2026
-  </p>
+        <p className="text-base font-bold text-[#1E3A8A] uppercase tracking-wide mb-1">
+          NGÀY HỘI ĐỔI MỚI SÁNG TẠO VÀ CHUYỂN ĐỔI SỐ TỈNH SƠN LA NĂM 2026
+        </p>
         
         <h1 className="text-3xl font-black text-[#1E3A8A] tracking-tight">SYMBIOTIC AI</h1>
         <p className="text-xs font-bold text-[#64748B] tracking-widest uppercase">MULTI AGENT SYSTEMS</p>
@@ -305,7 +322,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MÀN HÌNH 4: KẾT QUẢ HIỂN THỊ CÁC TÁC TỬ (GIỮ NGUYÊN GIAO DIỆN) */}
+      {/* MÀN HÌNH 4: KẾT QUẢ HIỂN THỊ CÁC TÁC TỬ */}
       {screen === 'RESULT' && (
         <div className="w-full max-w-md my-auto space-y-4">
           
@@ -333,7 +350,7 @@ export default function App() {
 
               {!isProcessing && agentResults && (
                 <div className="space-y-3">
-                  {/* GIỮ NGUYÊN 4 TAB TÁC TỬ ĐẦY ĐỦ */}
+                  {/* TAB TÁC TỬ */}
                   <div className="grid grid-cols-4 gap-1 bg-slate-200/60 p-1 rounded-2xl text-[10px] font-extrabold text-center">
                     <button
                       onClick={() => handleTabClick('ORCHESTRATOR')}
@@ -361,13 +378,10 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Nội dung kết quả */}
+                  {/* Nội dung kết quả an toàn */}
                   <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 min-h-[300px] text-sm text-slate-800 leading-relaxed overflow-x-auto">
                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {activeTab === 'ORCHESTRATOR' && agentResults.orchestrator}
-                      {activeTab === 'GIAI_NHANH' && agentResults.giaiNhanh}
-                      {activeTab === 'GIA_SU' && agentResults.giaSu}
-                      {activeTab === 'LUYEN_SKILL' && agentResults.luyenSkill}
+                      {getActiveContent()}
                     </ReactMarkdown>
                   </div>
 
