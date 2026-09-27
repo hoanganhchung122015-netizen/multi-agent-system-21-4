@@ -1,6 +1,11 @@
-// api/gemini.ts - Tự động Fallback Model để không bao giờ bị sập 404
+// api/gemini.ts - Cấu hình ưu tiên mô hình gemini-3.5-flash
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Xu ly CORS
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -8,22 +13,21 @@ export default async function handler(req: any, res: any) {
   const { prompt, image, systemInstruction } = req.body || {};
 
   if (!prompt && !image) {
-    return res.status(400).json({ error: 'Thiếu dữ liệu prompt hoặc ảnh' });
+    return res.status(400).json({ error: 'Thiếu dữ liệu bài tập hoặc hình ảnh' });
   }
 
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  // Lay API Key tu bien moi truong Vercel/Vite
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
 
   if (!apiKey) {
     return res.status(500).json({
-      error: 'Chưa cấu hình GEMINI_API_KEY trong Settings -> Environment Variables trên Vercel.',
+      error: 'Chưa cấu hình GEMINI_API_KEY trong Environment Variables trên Vercel.',
     });
   }
 
-  // Danh sách các model theo thứ tự ưu tiên
+  // Danh sách ưu tiên gọi gemini-3.5-flash hàng đầu
   const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
+    'gemini-3.5-flash'
   ];
 
   try {
@@ -45,9 +49,7 @@ export default async function handler(req: any, res: any) {
     }
 
     parts.push({
-      text:
-        prompt ||
-        'Hãy đọc hình ảnh đề toán này, trích xuất chính xác đề bài và trình bày lời giải chi tiết, rõ ràng nhất bằng Tiếng Việt.',
+      text: prompt || 'Hãy trích xuất nội dung bài tập và giải chi tiết từng bước bằng Tiếng Việt.',
     });
 
     const requestBody: any = {
@@ -60,44 +62,44 @@ export default async function handler(req: any, res: any) {
       };
     }
 
-    let lastError = null;
+    let lastError = '';
 
-    // Vòng lặp thử qua các Model nếu model trước bị lỗi 404
+    // Thực thi gọi API theo danh sách model
     for (const model of modelsToTry) {
       try {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-          }
-        );
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
 
         const data = await response.json();
 
         if (response.ok) {
           const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (textResult) {
-            return res.status(200).json({ text: textResult, modelUsed: model });
+            return res.status(200).json({ 
+              text: textResult, 
+              modelUsed: model 
+            });
           }
         } else {
           lastError = data.error?.message || JSON.stringify(data);
-          // Nếu không phải lỗi 404 (ví dụ 401 hết quyền) thì dừng luôn
-          if (response.status !== 404) {
-            return res.status(response.status).json({ error: `Lỗi Google API (${response.status}): ${lastError}` });
-          }
         }
       } catch (e: any) {
-        lastError = e?.message;
+        lastError = e?.message || 'Lỗi kết nối mạng';
       }
     }
 
-    return res.status(500).json({ error: `Không thể kết nối tới các Model Gemini. Lỗi cuối: ${lastError}` });
+    return res.status(500).json({
+      error: `Chi tiết phản hồi từ Google API: ${lastError}`,
+    });
 
   } catch (err: any) {
     return res.status(500).json({
-      error: `Lỗi Serverless Function: ${err?.message || JSON.stringify(err)}`,
+      error: `Lỗi Serverless: ${err?.message || JSON.stringify(err)}`,
     });
   }
 }
