@@ -1,8 +1,4 @@
-// api/gemini.ts - Tự động mã hóa Base64 để tránh bị GitHub Secret Scanner vô hiệu hóa Key
-
-// Thầy tạo API Key mới từ Google AI Studio, sau đó đổi sang mã Base64 (hoặc dán trực tiếp Key mới vào đây)
-// Ví dụ: Key mới của thầy dán vào giữa hai dấu nháy dưới đây:
-const RAW_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDUpOI_Io2DR5vXeLBMChpL8JNIZqHFWF0'; // Dán API Key MỚI vào đây
+// api/gemini.ts - Cập nhật tên Model chuẩn của Gemini Flash
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -15,7 +11,14 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Thiếu dữ liệu prompt hoặc ảnh' });
   }
 
-  const apiKey = RAW_KEY.trim();
+  // Đọc API Key từ biến môi trường Vercel
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'Chưa cấu hình GEMINI_API_KEY trong Settings -> Environment Variables trên Vercel.',
+    });
+  }
 
   try {
     const parts: any[] = [];
@@ -36,9 +39,11 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // 2. Thêm prompt
+    // 2. Thêm nội dung prompt
     parts.push({
-      text: prompt || 'Hãy đọc hình ảnh đề toán này, trích xuất chính xác đề bài và trình bày lời giải chi tiết, rõ ràng nhất bằng Tiếng Việt.',
+      text:
+        prompt ||
+        'Hãy đọc hình ảnh đề toán này, trích xuất chính xác đề bài và trình bày lời giải chi tiết, rõ ràng nhất bằng Tiếng Việt.',
     });
 
     const requestBody: any = {
@@ -51,8 +56,8 @@ export default async function handler(req: any, res: any) {
       };
     }
 
-    // 3. Gọi Gemini API 2.5 Flash
-    const response = await fetch(
+    // 3. Gọi Endpoint với tên model chuẩn: gemini-2.5-flash
+    const googleResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
@@ -63,11 +68,11 @@ export default async function handler(req: any, res: any) {
       }
     );
 
-    const data = await response.json();
+    const data = await googleResponse.json();
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: `Google API Error (${response.status}): ${data.error?.message || JSON.stringify(data)}`,
+    if (!googleResponse.ok) {
+      return res.status(googleResponse.status).json({
+        error: `Google API Error (${googleResponse.status}): ${data.error?.message || JSON.stringify(data)}`,
       });
     }
 
