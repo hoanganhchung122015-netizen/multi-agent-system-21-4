@@ -11,7 +11,7 @@ import { runFullMAS } from './services/geminiService';
 export default function App() {
   const [screen, setScreen] = useState<ScreenState>('LOGIN');
   const [student, setStudent] = useState<StudentInfo>({
-    name: 'HOÀNG ANH CHUNG',
+    name: 'THUY LIN HOANG',
     className: '12A',
     school: 'THPT MAI SƠN - SƠN LA'
   });
@@ -141,6 +141,10 @@ export default function App() {
       
       {/* Header dùng chung */}
       <header className="text-center my-4">
+        
+          <p className="text-base font-bold text-[#1E3A8A] uppercase tracking-wide mb-1">
+    NGÀY HỘI ĐỔI MỚI SÁNG TẠO VÀ CHUYỂN ĐỔI SỐ TỈNH SƠN LA NĂM 2026
+  </p>
         <h1 className="text-3xl font-black text-[#1E3A8A] tracking-tight">SYMBIOTIC AI</h1>
         <p className="text-xs font-bold text-[#64748B] tracking-widest uppercase">MULTI AGENT SYSTEMS</p>
         <p className="text-sm italic text-[#4F46E5] font-medium mt-1">Gia sư ảo thông minh của mọi thế hệ học sinh</p>
