@@ -1,4 +1,4 @@
-// api/gemini.ts - Cập nhật model gemini-3.8-flash
+// api/gemini.ts - Tự động Fallback Model để không bao giờ bị sập 404
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -11,7 +11,6 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Thiếu dữ liệu prompt hoặc ảnh' });
   }
 
-  // Đọc API Key từ biến môi trường Vercel
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
   if (!apiKey) {
@@ -20,10 +19,16 @@ export default async function handler(req: any, res: any) {
     });
   }
 
+  // Danh sách các model theo thứ tự ưu tiên
+  const modelsToTry = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash'
+  ];
+
   try {
     const parts: any[] = [];
 
-    // 1. Xử lý ảnh base64 nếu có
     if (image) {
       const base64Data = image.includes(',') ? image.split(',')[1] : image;
       let mimeType = 'image/jpeg';
@@ -39,7 +44,6 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // 2. Thêm nội dung prompt
     parts.push({
       text:
         prompt ||
@@ -56,36 +60,44 @@ export default async function handler(req: any, res: any) {
       };
     }
 
-    // 3. Gọi Endpoint với model gemini-3.8-flash
-    const googleResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+    let lastError = null;
+
+    // Vòng lặp thử qua các Model nếu model trước bị lỗi 404
+    for (const model of modelsToTry) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (textResult) {
+            return res.status(200).json({ text: textResult, modelUsed: model });
+          }
+        } else {
+          lastError = data.error?.message || JSON.stringify(data);
+          // Nếu không phải lỗi 404 (ví dụ 401 hết quyền) thì dừng luôn
+          if (response.status !== 404) {
+            return res.status(response.status).json({ error: `Lỗi Google API (${response.status}): ${lastError}` });
+          }
+        }
+      } catch (e: any) {
+        lastError = e?.message;
       }
-    );
-
-    const data = await googleResponse.json();
-
-    if (!googleResponse.ok) {
-      return res.status(googleResponse.status).json({
-        error: `Google API Error (${googleResponse.status}): ${data.error?.message || JSON.stringify(data)}`,
-      });
     }
 
-    const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return res.status(500).json({ error: `Không thể kết nối tới các Model Gemini. Lỗi cuối: ${lastError}` });
 
-    if (textResult) {
-      return res.status(200).json({ text: textResult });
-    } else {
-      return res.status(500).json({ error: 'Không nhận được nội dung phản hồi từ Gemini API.' });
-    }
   } catch (err: any) {
     return res.status(500).json({
-      error: `Lỗi kết nối Serverless Function: ${err?.message || JSON.stringify(err)}`,
+      error: `Lỗi Serverless Function: ${err?.message || JSON.stringify(err)}`,
     });
   }
 }
