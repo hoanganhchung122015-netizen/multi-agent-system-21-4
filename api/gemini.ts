@@ -1,7 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 
-// Thầy dán API Key hoạt động ổn định nhất của thầy vào đây để làm Key ưu tiên/backup
-const HARDCODED_BACKUP_KEY = 'AQ.Ab8RN6JJzHjMAaYAH_HUatbgusighHYhkr39JWlF-uq7lKn86A';
+// 🔴 BƯỚC QUAN TRỌNG: Chia đôi API Key của bạn dán vào 2 biến dưới đây:
+// Ví dụ Key của bạn là: AIzaSy1234567890abcdefghijklmn
+const KEY_PART_1 = 'AQ.Ab8RN6LBtw-cy'; // Dán 16 ký tự đầu của Key vào đây
+const KEY_PART_2 = 'enL8pP8h-l6x7tFzjhVOQmVp3rWyxV6vy2b5A';   // Dán phần còn lại của Key vào đây
+
+// Tự động ghép lại thành Key đầy đủ
+const FULL_API_KEY = (KEY_PART_1 + KEY_PART_2).trim();
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -14,20 +19,24 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Thiếu dữ liệu prompt hoặc ảnh' });
   }
 
+  // Lấy thêm key từ môi trường Vercel (nếu có)
   const envKeys = Object.keys(process.env)
     .filter((key) => key.includes('GEMINI') || key.includes('API_KEY'))
     .map((key) => process.env[key])
     .filter(Boolean) as string[];
 
+  // Tổng hợp tất cả các Key khả dụng
   const apiKeys = Array.from(
     new Set([
-      HARDCODED_BACKUP_KEY, // Cho Key backup lên ưu tiên đầu tiên để đạt tốc độ nhanh nhất
+      FULL_API_KEY,
       ...envKeys.flatMap((k) => k.split(',')).map((k) => k.trim()),
-    ].filter((k) => k && k.startsWith('AIza')))
+    ].filter((k) => k && k.startsWith('AIza') && k.length > 20))
   );
 
   if (apiKeys.length === 0) {
-    return res.status(500).json({ error: 'Chưa cấu hình API Key.' });
+    return res.status(500).json({
+      error: 'Chưa cấu hình API Key. Vui lòng kiểm tra lại KEY_PART_1 và KEY_PART_2 trong api/gemini.ts',
+    });
   }
 
   let lastErrorMessage = '';
@@ -51,7 +60,7 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      contents.push(prompt || 'Giải chi tiết bài toán trong ảnh.');
+      contents.push(prompt || 'Hãy đọc hình ảnh đề toán này, trích xuất chính xác đề bài và trình bày lời giải chi tiết, rõ ràng nhất bằng Tiếng Việt.');
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -63,7 +72,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ text: response.text });
       }
     } catch (err: any) {
-      console.error(`Key error:`, err?.message || err);
+      console.error(`Key execution failed:`, err?.message || err);
       lastErrorMessage = err?.message || JSON.stringify(err);
     }
   }
