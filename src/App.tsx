@@ -114,7 +114,7 @@ export default function App() {
       }
 
       // Bước 2: Chạy Multi-Agent Systems
-      setLoadingText('ĐANG PHỐI HỢP ĐỒNG THỜI 4 TÁC TỬ AI (MAS)...');
+      setLoadingText('ĐANG PHỐI HỢP CỘNG SINH TÁC NHÂN AI (MAS)...');
       const results = await runFullMAS(selectedSubject, finalPrompt);
       setAgentResults(results);
 
