@@ -12,8 +12,8 @@ export default function App() {
   // States
   const [screen, setScreen] = useState<ScreenState>('LOGIN');
   const [student, setStudent] = useState<StudentInfo>({
-    name: 'CHUNG ANH',
-    className: '12A',
+    name: 'HOANG KHANH LINH',
+    className: '12A1',
     school: 'THPT MAI SƠN - Sơn La'
   });
   const [selectedSubject, setSelectedSubject] = useState<Subject>('Toán học');
