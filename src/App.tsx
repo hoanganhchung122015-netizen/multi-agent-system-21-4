@@ -1,8 +1,4 @@
 import React, { useState, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
 
 import { Subject, ScreenState, StudentInfo, AgentResult, DiaryEntry } from './types';
 import { extractTextFromImageClient } from './services/ocrService';
@@ -136,33 +132,34 @@ export default function App() {
     setActiveTab(tab);
   };
 
-  // Hàm trích xuất chuẩn xác CHỈ BẮT ĐẦU TỪ "ĐÁP ÁN"
-  const extractOnlyAnswer = (text: string) => {
-    if (!text) return 'Không có dữ liệu đáp án.';
-    
-    const regex = /(ĐÁP ÁN CUỐI CÙNG|ĐÁP ÁN|KẾT QUẢ CUỐI CÙNG):?/i;
-    const match = text.match(regex);
-    
-    if (match && match.index !== undefined) {
-      return text.substring(match.index).trim();
-    }
-    
-    return text.trim();
-  };
+  // HÀM TRÍCH XUẤT VÀ LÀM SẠCH CHỈ LẤY ĐÁP ÁN ĐẸP MẮT
+  const extractCleanAnswer = (text: string) => {
+    if (!text) return 'Chưa có kết quả đáp án.';
 
-  // Lấy nội dung hiển thị cho từng tab
-  const getActiveContent = () => {
-    if (!agentResults) return 'Đang tải kết quả...';
-    switch (activeTab) {
-      case 'GIAI_NHANH':
-        return extractOnlyAnswer(agentResults.giaiNhanh || '');
-      case 'GIA_SU':
-        return agentResults.giaSu || 'Tính năng đang cập nhật.';
-      case 'LUYEN_SKILL':
-        return agentResults.luyenSkill || 'Tính năng đang cập nhật.';
-      default:
-        return '';
+    // Tìm các cụm từ chỉ đáp án thường gặp
+    const patterns = [
+      /(ĐÁP ÁN CUỐI CÙNG|ĐÁP ÁN|CHỌN DÁP ÁN|CHỌN):?\s*(.*)/i,
+      /(Chọn\s+[A-D].*)/i,
+      /([A-D]\.\s*.*)/
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        let res = match[0].replace(/\*\*/g, '').trim(); // Xóa dấu markdown **
+        // Nếu dòng chứa đáp án quá dài do kèm lời giải, cắt lấy câu đầu tiên
+        if (res.includes('.')) {
+          const firstSentence = res.split('.')[0];
+          if (firstSentence.length > 5) res = firstSentence;
+        }
+        return res;
+      }
     }
+
+    // Lấy câu cuối cùng nếu không tìm thấy từ khóa
+    const lines = text.trim().split('\n').filter(l => l.trim().length > 0);
+    const lastLine = lines[lines.length - 1].replace(/\*\*/g, '').trim();
+    return lastLine;
   };
 
   return (
@@ -334,7 +331,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MÀN HÌNH 4: KẾT QUẢ HIỂN THỊ CÁC TÁC TỬ */}
+      {/* MÀN HÌNH 4: KẾT QUẢ HIỂN THỊ DẠNG THẺ ĐẸP MẮT */}
       {screen === 'RESULT' && (
         <div className="w-full max-w-md my-auto space-y-4">
           
@@ -354,15 +351,15 @@ export default function App() {
               </div>
 
               {isProcessing && (
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl flex flex-col items-center justify-center space-y-6 min-h-[300px]">
+                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl flex flex-col items-center justify-center space-y-6 min-h-[220px]">
                   <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                   <p className="text-xs font-extrabold text-[#2563EB] text-center tracking-wider uppercase">{loadingText}</p>
                 </div>
               )}
 
               {!isProcessing && agentResults && (
-                <div className="space-y-3">
-                  {/* CÒN ĐÚNG 3 TAB: ẨN HOÀN TOÀN TÁC TỬ ĐIỀU PHỐI */}
+                <div className="space-y-4">
+                  {/* THANH TAB 3 CHỨC NĂNG */}
                   <div className="grid grid-cols-3 gap-1 bg-slate-200/60 p-1 rounded-2xl text-[10px] font-extrabold text-center">
                     <button
                       onClick={() => handleTabClick('GIAI_NHANH')}
@@ -384,16 +381,20 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* KHUNG HIỂN THỊ CHỈ ĐÁP ÁN CUỐI CÙNG */}
-                  <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 min-h-[150px] text-base text-slate-800 font-bold leading-relaxed flex items-center justify-center text-center">
-                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {getActiveContent()}
-                    </ReactMarkdown>
+                  {/* KHUNG HIỂN THỊ ĐÁP ÁN NỔI BẬT & CĂN CHUẨN UI */}
+                  <div className="bg-white rounded-3xl p-6 shadow-xl border border-blue-50 flex flex-col items-center justify-center text-center space-y-3 min-h-[160px]">
+                    <span className="text-[11px] font-black uppercase text-blue-500 tracking-wider bg-blue-50 px-3 py-1 rounded-full">
+                      KẾT QUẢ CHÍNH XÁC
+                    </span>
+                    
+                    <div className="text-2xl font-black text-indigo-950 tracking-wide px-2 py-1">
+                      {extractCleanAnswer(agentResults.giaiNhanh || '')}
+                    </div>
                   </div>
 
                   <button
                     onClick={() => setScreen('INPUT')}
-                    className="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-2xl transition-all uppercase"
+                    className="w-full py-3.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-2xl transition-all uppercase tracking-wider"
                   >
                     ← Giải bài tập khác
                   </button>
