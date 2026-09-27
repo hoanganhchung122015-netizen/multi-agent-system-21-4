@@ -1,32 +1,33 @@
 import { GoogleGenAI } from '@google/genai';
 
+// Thầy dán API Key hoạt động ổn định nhất của thầy vào đây để làm Key ưu tiên/backup
+const HARDCODED_BACKUP_KEY = 'AIzaSy...THAY_KEY_CHUAN_CUA_THAY_VAO_DAY...';
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { prompt, systemInstruction } = req.body || {};
+  const { prompt, image, systemInstruction } = req.body || {};
 
-  if (!prompt) {
-    return res.status(400).json({ error: 'Missing prompt in request body' });
+  if (!prompt && !image) {
+    return res.status(400).json({ error: 'Thiếu dữ liệu prompt hoặc ảnh' });
   }
 
-  // Quét tự động tất cả các biến môi trường chứa GEMINI hoặc API_KEY
   const envKeys = Object.keys(process.env)
     .filter((key) => key.includes('GEMINI') || key.includes('API_KEY'))
     .map((key) => process.env[key])
     .filter(Boolean) as string[];
 
   const apiKeys = Array.from(
-    new Set(
-      envKeys.flatMap((k) => k.split(',')).map((k) => k.trim()).filter(Boolean)
-    )
+    new Set([
+      HARDCODED_BACKUP_KEY, // Cho Key backup lên ưu tiên đầu tiên để đạt tốc độ nhanh nhất
+      ...envKeys.flatMap((k) => k.split(',')).map((k) => k.trim()),
+    ].filter((k) => k && k.startsWith('AIza')))
   );
 
   if (apiKeys.length === 0) {
-    return res.status(500).json({
-      error: 'Chưa cấu hình GEMINI_API_KEY trên Vercel Environment Variables.'
-    });
+    return res.status(500).json({ error: 'Chưa cấu hình API Key.' });
   }
 
   let lastErrorMessage = '';
@@ -34,10 +35,27 @@ export default async function handler(req: any, res: any) {
   for (const apiKey of apiKeys) {
     try {
       const ai = new GoogleGenAI({ apiKey });
-      
+      const contents: any[] = [];
+
+      if (image) {
+        const base64Data = image.includes(',') ? image.split(',')[1] : image;
+        const mimeType = image.includes('data:')
+          ? image.split(';')[0].replace('data:', '')
+          : 'image/jpeg';
+
+        contents.push({
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType,
+          },
+        });
+      }
+
+      contents.push(prompt || 'Giải chi tiết bài toán trong ảnh.');
+
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
+        model: 'gemini-2.5-flash',
+        contents: contents,
         config: systemInstruction ? { systemInstruction } : undefined,
       });
 
@@ -45,12 +63,12 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ text: response.text });
       }
     } catch (err: any) {
-      console.error(`Key execution failed:`, err?.message || err);
+      console.error(`Key error:`, err?.message || err);
       lastErrorMessage = err?.message || JSON.stringify(err);
     }
   }
 
   return res.status(500).json({
-    error: `Gọi API thất bại. Lỗi chi tiết từ Google: ${lastErrorMessage}`
+    error: `Lỗi gọi API từ Google: ${lastErrorMessage}`,
   });
 }
