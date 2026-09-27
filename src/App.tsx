@@ -9,12 +9,11 @@ import { extractTextFromImageClient } from './services/ocrService';
 import { runFullMAS } from './services/geminiService';
 
 export default function App() {
-  // States
   const [screen, setScreen] = useState<ScreenState>('LOGIN');
   const [student, setStudent] = useState<StudentInfo>({
-    name: 'HOANG KHANH LINH',
-    className: '12A1',
-    school: 'THPT MAI SƠN - Sơn La'
+    name: 'HOÀNG ANH CHUNG',
+    className: '12A',
+    school: 'THPT MAI SƠN - SƠN LA'
   });
   const [selectedSubject, setSelectedSubject] = useState<Subject>('Toán học');
   const [inputText, setInputText] = useState<string>('');
@@ -23,24 +22,20 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>('');
   
-  // Tab Agent được chọn ở màn hình kết quả
-  const [activeTab, setActiveTab] = useState<'orchestrator' | 'giaiNhanh' | 'giaSu' | 'luyenSkill'>('giaiNhanh');
   const [agentResults, setAgentResults] = useState<AgentResult | null>(null);
+  const [activeTab, setActiveTab] = useState<'ORCHESTRATOR' | 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL'>('GIAI_NHANH');
   const [diaryList, setDiaryList] = useState<DiaryEntry[]>([]);
 
-  // Ref cho file input & recording
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isRecording, setIsRecording] = useState<boolean>(false);
 
-  // 1. Đăng nhập (Hình 2)
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!student.name.trim()) return alert('Vui lòng nhập tên học sinh');
     setScreen('DASHBOARD');
   };
 
-  // 2. Chọn Môn học từ Dashboard (Hình 3)
   const handleSelectSubject = (subj: Subject) => {
     setSelectedSubject(subj);
     if (subj === 'Nhật ký') {
@@ -50,11 +45,11 @@ export default function App() {
       setSelectedImage(null);
       setImagePreviewUrl(null);
       setAgentResults(null);
+      setActiveTab('GIAI_NHANH');
       setScreen('INPUT');
     }
   };
 
-  // 3. Chọn file ảnh từ thư viện hoặc Camera
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -63,7 +58,6 @@ export default function App() {
     }
   };
 
-  // 4. Ghi âm giọng nói (Web Speech API)
   const handleToggleRecording = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -92,7 +86,6 @@ export default function App() {
     recognition.start();
   };
 
-  // 5. Thực hiện phối hợp MAS (Hình 4 -> Hình 5)
   const handleExecuteMAS = async () => {
     if (!inputText && !selectedImage) {
       alert('Vui lòng chụp ảnh, chọn ảnh hoặc nhập nội dung bài tập!');
@@ -101,24 +94,22 @@ export default function App() {
 
     setIsProcessing(true);
     setScreen('RESULT');
-    setLoadingText('ĐANG TẢI DỮ LIỆU TỪ CHUYÊN GIA GIẢI NHANH 1S...');
+    setActiveTab('GIAI_NHANH');
+    setLoadingText('ĐANG PHÂN TÍCH VÀ ĐIỀU PHỐI BÀI TẬP...');
 
     try {
       let finalPrompt = inputText;
 
-      // Bước 1: Nếu có ảnh thì chạy OCR trước
       if (selectedImage) {
-        setLoadingText('ĐANG XỬ LÝ ẢNH & BẢN QUYỀN VĂN BẢN (OCR)...');
+        setLoadingText('ĐANG XỬ LÝ ẢNH & NHẬN DẠNG VĂN BẢN (OCR)...');
         const ocrText = await extractTextFromImageClient(selectedImage);
         finalPrompt = ocrText + (inputText ? `\nGhi chú: ${inputText}` : '');
       }
 
-      // Bước 2: Chạy Multi-Agent Systems
-      setLoadingText('ĐANG PHỐI HỢP CỘNG SINH TÁC NHÂN AI (MAS)...');
+      setLoadingText('KẾT NỐI CHUYÊN GIA GIẢI NHANH 1S...');
       const results = await runFullMAS(selectedSubject, finalPrompt);
       setAgentResults(results);
 
-      // Lưu vào Nhật ký
       const newEntry: DiaryEntry = {
         id: Date.now().toString(),
         timestamp: new Date().toLocaleString('vi-VN'),
@@ -137,21 +128,25 @@ export default function App() {
     }
   };
 
+  // Khóa không cho bấm sang tab Gia sư AI & Luyện Skill (bấm vào giữ nguyên)
+  const handleTabClick = (tab: 'ORCHESTRATOR' | 'GIAI_NHANH' | 'GIA_SU' | 'LUYEN_SKILL') => {
+    if (tab === 'GIA_SU' || tab === 'LUYEN_SKILL') {
+      return; // Bấm không phản hồi, giữ nguyên màn hình hiện tại
+    }
+    setActiveTab(tab);
+  };
+
   return (
     <div className="min-h-screen bg-[#F4F7FF] text-[#1E293B] flex flex-col items-center justify-between p-4 font-sans">
       
       {/* Header dùng chung */}
       <header className="text-center my-4">
-  {/* Dòng chữ mới thêm vào ở đây */}
-  <p className="text-base font-bold text-[#1E3A8A] uppercase tracking-wide mb-1">
-    NGÀY HỘI ĐỔI MỚI SÁNG TẠO VÀ CHUYỂN ĐỔI SỐ TỈNH SƠN LA NĂM 2026
-  </p>
         <h1 className="text-3xl font-black text-[#1E3A8A] tracking-tight">SYMBIOTIC AI</h1>
         <p className="text-xs font-bold text-[#64748B] tracking-widest uppercase">MULTI AGENT SYSTEMS</p>
         <p className="text-sm italic text-[#4F46E5] font-medium mt-1">Gia sư ảo thông minh của mọi thế hệ học sinh</p>
       </header>
 
-      {/* MÀN HÌNH 1: ĐĂNG NHẬP HỌC SINH (HÌNH 2) */}
+      {/* MÀN HÌNH 1: ĐĂNG NHẬP */}
       {screen === 'LOGIN' && (
         <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-xl border border-blue-50 my-auto">
           <h2 className="text-xl font-extrabold text-center text-[#0F172A] mb-1">ĐĂNG NHẬP HỌC SINH</h2>
@@ -165,7 +160,6 @@ export default function App() {
                 value={student.name}
                 onChange={(e) => setStudent({ ...student, name: e.target.value })}
                 className="w-full px-4 py-3 bg-[#F8FAFC] border border-slate-200 rounded-2xl text-sm font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Nhập họ và tên"
                 required
               />
             </div>
@@ -177,7 +171,6 @@ export default function App() {
                 value={student.className}
                 onChange={(e) => setStudent({ ...student, className: e.target.value })}
                 className="w-full px-4 py-3 bg-[#F8FAFC] border border-slate-200 rounded-2xl text-sm font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Ví dụ: 12A"
                 required
               />
             </div>
@@ -203,23 +196,16 @@ export default function App() {
         </div>
       )}
 
-      {/* MÀN HÌNH 2: DASHBOARD LỰA CHỌN MÔN (HÌNH 3) */}
+      {/* MÀN HÌNH 2: DASHBOARD */}
       {screen === 'DASHBOARD' && (
         <div className="w-full max-w-md my-auto space-y-4">
-          {/* Thanh thông tin tài khoản */}
           <div className="bg-white rounded-2xl px-4 py-2.5 shadow-sm border border-slate-100 flex items-center justify-between text-xs">
             <span className="font-bold text-[#0F172A]">
               {student.name.toUpperCase()} ({student.className}) <span className="text-slate-300 mx-1">|</span> <span className="text-slate-500 font-normal">{student.school}</span>
             </span>
-            <button
-              onClick={() => setScreen('LOGIN')}
-              className="text-[#4F46E5] font-bold hover:underline uppercase text-[10px]"
-            >
-              ĐỔI TÀI KHOẢN
-            </button>
+            <button onClick={() => setScreen('LOGIN')} className="text-[#4F46E5] font-bold uppercase text-[10px]">ĐỔI TÀI KHOẢN</button>
           </div>
 
-          {/* Grid 4 môn học */}
           <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => handleSelectSubject('Toán học')}
@@ -256,17 +242,15 @@ export default function App() {
         </div>
       )}
 
-      {/* MÀN HÌNH 3: NHẬP LIỆU BÀI TẬP (HÌNH 4) */}
+      {/* MÀN HÌNH 3: NHẬP LIỆU BÀI TẬP */}
       {screen === 'INPUT' && (
         <div className="w-full max-w-md my-auto space-y-4">
-          {/* Tag môn học */}
           <div className="flex justify-center">
             <span className="px-6 py-1.5 bg-blue-100 text-[#3B82F6] font-extrabold text-xs rounded-full uppercase tracking-wider">
               {selectedSubject}
             </span>
           </div>
 
-          {/* User info bar */}
           <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-slate-100 flex items-center justify-between text-xs">
             <span className="font-bold text-[#0F172A]">
               {student.name.toUpperCase()} ({student.className}) <span className="text-slate-300 mx-1">|</span> <span className="text-slate-500 font-normal">{student.school}</span>
@@ -274,17 +258,11 @@ export default function App() {
             <button onClick={() => setScreen('LOGIN')} className="text-[#4F46E5] font-bold text-[10px]">ĐỔI TÀI KHOẢN</button>
           </div>
 
-          {/* Khung preview/nhập bài tập */}
           <div className="bg-blue-50/50 border-2 border-dashed border-blue-200 rounded-3xl p-6 min-h-[260px] flex flex-col items-center justify-center text-center relative overflow-hidden">
             {imagePreviewUrl ? (
               <div className="w-full h-full flex flex-col items-center">
                 <img src={imagePreviewUrl} alt="Preview" className="max-h-48 rounded-xl object-contain shadow-sm mb-2" />
-                <button
-                  onClick={() => { setSelectedImage(null); setImagePreviewUrl(null); }}
-                  className="text-xs text-red-500 font-bold hover:underline"
-                >
-                  Xóa ảnh này
-                </button>
+                <button onClick={() => { setSelectedImage(null); setImagePreviewUrl(null); }} className="text-xs text-red-500 font-bold hover:underline">Xóa ảnh này</button>
               </div>
             ) : (
               <textarea
@@ -296,69 +274,45 @@ export default function App() {
             )}
           </div>
 
-          {/* Inputs ẩn */}
           <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" />
           <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
 
-          {/* 4 Nút hành động tròn */}
           <div className="grid grid-cols-4 gap-3 pt-2">
-            <button
-              onClick={() => cameraInputRef.current?.click()}
-              className="flex flex-col items-center space-y-1 group"
-            >
-              <div className="w-14 h-14 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">
-                📷
-              </div>
+            <button onClick={() => cameraInputRef.current?.click()} className="flex flex-col items-center space-y-1">
+              <div className="w-14 h-14 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">📷</div>
               <span className="text-[10px] font-extrabold text-slate-500 uppercase">CAMERA</span>
             </button>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center space-y-1 group"
-            >
-              <div className="w-14 h-14 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">
-                🖼️
-              </div>
+            <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center space-y-1">
+              <div className="w-14 h-14 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">🖼️</div>
               <span className="text-[10px] font-extrabold text-slate-500 uppercase">THƯ VIỆN</span>
             </button>
 
-            <button
-              onClick={handleToggleRecording}
-              className="flex flex-col items-center space-y-1 group"
-            >
-              <div className={`w-14 h-14 ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-[#2563EB]'} hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all`}>
-                🎙️
-              </div>
+            <button onClick={handleToggleRecording} className="flex flex-col items-center space-y-1">
+              <div className={`w-14 h-14 ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-[#2563EB]'} hover:bg-blue-700 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all`}>🎙️</div>
               <span className="text-[10px] font-extrabold text-slate-500 uppercase">{isRecording ? 'ĐANG GHI' : 'GHI ÂM'}</span>
             </button>
 
-            <button
-              onClick={handleExecuteMAS}
-              className="flex flex-col items-center space-y-1 group"
-            >
-              <div className="w-14 h-14 bg-[#93C5FD] hover:bg-blue-300 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">
-                🚀
-              </div>
+            <button onClick={handleExecuteMAS} className="flex flex-col items-center space-y-1">
+              <div className="w-14 h-14 bg-[#93C5FD] hover:bg-blue-300 text-white rounded-2xl flex items-center justify-center text-xl shadow-md transition-all">🚀</div>
               <span className="text-[10px] font-extrabold text-slate-500 uppercase">THỰC HIỆN</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* MÀN HÌNH 4: KẾT QUẢ PHỐI HỢP AGENTS (HÌNH 5 & NHẬT KÝ) */}
+      {/* MÀN HÌNH 4: KẾT QUẢ HIỂN THỊ CÁC TÁC TỬ (GIỮ NGUYÊN GIAO DIỆN) */}
       {screen === 'RESULT' && (
         <div className="w-full max-w-md my-auto space-y-4">
           
           {selectedSubject !== 'Nhật ký' && (
             <>
-              {/* Tag môn học */}
               <div className="flex justify-center">
                 <span className="px-6 py-1.5 bg-blue-100 text-[#3B82F6] font-extrabold text-xs rounded-full uppercase">
                   {selectedSubject}
                 </span>
               </div>
 
-              {/* User info bar */}
               <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-slate-100 flex items-center justify-between text-xs">
                 <span className="font-bold text-[#0F172A]">
                   {student.name.toUpperCase()} ({student.className}) <span className="text-slate-300 mx-1">|</span> <span className="text-slate-500 font-normal">{student.school}</span>
@@ -366,7 +320,6 @@ export default function App() {
                 <button onClick={() => setScreen('DASHBOARD')} className="text-[#4F46E5] font-bold text-[10px]">ĐỔI MÔN</button>
               </div>
 
-              {/* Đang xử lý Loading (Hình 5) */}
               {isProcessing && (
                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl flex flex-col items-center justify-center space-y-6 min-h-[300px]">
                   <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -374,41 +327,43 @@ export default function App() {
                 </div>
               )}
 
-              {/* Hiển thị kết quả 4 Agent dạng Tab ngang (Hình 5) */}
               {!isProcessing && agentResults && (
                 <div className="space-y-3">
-                  {/* Thanh điều hướng 4 Agent */}
-                  <div className="bg-[#2563EB] p-1.5 rounded-2xl grid grid-cols-4 gap-1 shadow-md">
+                  {/* GIỮ NGUYÊN 4 TAB TÁC TỬ ĐẦY ĐỦ */}
+                  <div className="grid grid-cols-4 gap-1 bg-slate-200/60 p-1 rounded-2xl text-[10px] font-extrabold text-center">
                     <button
-                      onClick={() => setActiveTab('orchestrator')}
-                      className={`py-2 px-1 rounded-xl text-[9px] font-extrabold transition-all ${activeTab === 'orchestrator' ? 'bg-white text-[#2563EB] shadow-sm' : 'text-white hover:bg-blue-600'}`}
+                      onClick={() => handleTabClick('ORCHESTRATOR')}
+                      className={`py-2 rounded-xl transition-all ${activeTab === 'ORCHESTRATOR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
                     >
-                      ĐIỀU PHỐI MAS
+                      ĐIỀU PHỐI
                     </button>
                     <button
-                      onClick={() => setActiveTab('giaiNhanh')}
-                      className={`py-2 px-1 rounded-xl text-[9px] font-extrabold transition-all ${activeTab === 'giaiNhanh' ? 'bg-white text-[#2563EB] shadow-sm' : 'text-white hover:bg-blue-600'}`}
+                      onClick={() => handleTabClick('GIAI_NHANH')}
+                      className={`py-2 rounded-xl transition-all ${activeTab === 'GIAI_NHANH' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500'}`}
                     >
-                      ⚡ GIẢI NHANH 1S
+                      GIẢI 1S
                     </button>
                     <button
-                      onClick={() => setActiveTab('giaSu')}
-                      className={`py-2 px-1 rounded-xl text-[9px] font-extrabold transition-all ${activeTab === 'giaSu' ? 'bg-white text-[#2563EB] shadow-sm' : 'text-white hover:bg-blue-600'}`}
+                      onClick={() => handleTabClick('GIA_SU')}
+                      className={`py-2 rounded-xl transition-all ${activeTab === 'GIA_SU' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 cursor-not-allowed'}`}
                     >
-                      🎓 GIA SƯ AI
+                      GIA SƯ AI
                     </button>
                     <button
-                      onClick={() => setActiveTab('luyenSkill')}
-                      className={`py-2 px-1 rounded-xl text-[9px] font-extrabold transition-all ${activeTab === 'luyenSkill' ? 'bg-white text-[#2563EB] shadow-sm' : 'text-white hover:bg-blue-600'}`}
+                      onClick={() => handleTabClick('LUYEN_SKILL')}
+                      className={`py-2 rounded-xl transition-all ${activeTab === 'LUYEN_SKILL' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 cursor-not-allowed'}`}
                     >
-                      🎯 LUYỆN SKILL
+                      LUYỆN SKILL
                     </button>
                   </div>
 
-                  {/* Nội dung kết quả Agent tương ứng */}
+                  {/* Nội dung kết quả */}
                   <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 min-h-[300px] text-sm text-slate-800 leading-relaxed overflow-x-auto">
                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {agentResults[activeTab]}
+                      {activeTab === 'ORCHESTRATOR' && agentResults.orchestrator}
+                      {activeTab === 'GIAI_NHANH' && agentResults.giaiNhanh}
+                      {activeTab === 'GIA_SU' && agentResults.giaSu}
+                      {activeTab === 'LUYEN_SKILL' && agentResults.luyenSkill}
                     </ReactMarkdown>
                   </div>
 
@@ -423,7 +378,7 @@ export default function App() {
             </>
           )}
 
-          {/* Màn hình Nhật ký học tập */}
+          {/* Màn hình Nhật ký */}
           {selectedSubject === 'Nhật ký' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
@@ -454,7 +409,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer Chuyển đổi số */}
+      {/* Footer */}
       <footer className="text-center my-4 space-y-0.5">
         <p className="text-[11px] font-extrabold text-[#334155] tracking-wide">SYMBIOTIC AI — GIẢI PHÁP CHUYỂN ĐỔI SỐ GIÁO DỤC</p>
         <p className="text-[10px] font-bold text-[#4F46E5] tracking-wider uppercase">TRƯỜNG THPT MAI SƠN</p>
