@@ -11,7 +11,7 @@ import {
   Professor1Result, 
   Professor3QuizResult, 
   DiaryEntry 
-} from './types';
+} from '../types';
 import { extractTextFromImageClient } from './services/ocrService';
 import { 
   runOrchestrator, 
