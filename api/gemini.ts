@@ -1,182 +1,89 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 
-export interface VercelRequest {
-  method?: string;
-  body?: any;
-  query?: Record<string, string | string[]>;
-  headers?: Record<string, string | string[]>;
-}
+// Lấy danh sách API Keys dự phòng từ biến môi trường
+const getApiKeys = (): string[] => {
+  const keys = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+  ].filter((key): key is string => Boolean(key && key.trim().length > 0));
 
-export interface VercelResponse {
-  status: (code: number) => VercelResponse;
-  json: (data: any) => void;
-  send?: (body: any) => void;
-  end?: () => void;
-}
-
-const TEXT_MODEL = 'gemini-2.5-flash';
-
-/**
- * Lấy danh sách toàn bộ API Key từ các biến môi trường trên Vercel Serverless Function
- */
-const getAllAPIKeys = (): string[] => {
-  const rawKeys: string[] = [];
-
-  // Hàm hỗ trợ đọc biến môi trường linh hoạt (Cả GEMINI_API_KEY_x lẫn VITE_GEMINI_API_KEY_x)
-  const getEnv = (key: string) => {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env[key] || process.env[`VITE_${key}`];
-    }
-    return undefined;
-  };
-
-  // 1. Lấy từ các biến lẻ KEY_1 đến KEY_4
-  const k1 = getEnv('GEMINI_API_KEY_1');
-  const k2 = getEnv('GEMINI_API_KEY_2');
-  const k3 = getEnv('GEMINI_API_KEY_3');
-  const k4 = getEnv('GEMINI_API_KEY_4');
-
-  if (k1) rawKeys.push(k1);
-  if (k2) rawKeys.push(k2);
-  if (k3) rawKeys.push(k3);
-  if (k4) rawKeys.push(k4);
-
-  // 2. Fallback nếu khai báo dạng chuỗi gộp phân tách bằng dấu phẩy
-  const comboKey = getEnv('GEMINI_API_KEY') || getEnv('API_KEY');
-  if (comboKey) {
-    rawKeys.push(...comboKey.split(','));
-  }
-
-  // 3. Làm sạch dữ liệu: Xóa khoảng trắng, lọc đúng định dạng Gemini Key ("AIzaSy...") và loại bỏ trùng lặp
-  const cleanKeys = rawKeys
-    .map(k => (k ? k.trim() : ''))
-    .filter(k => k.length > 0 && k.startsWith('AIzaSy'));
-
-  return Array.from(new Set(cleanKeys));
+  return keys.length > 0 ? keys : [''];
 };
 
-/**
- * Sắp xếp thứ tự ưu tiên Key dựa trên Tác tử (Agent), sau đó xoay vòng dự phòng
- */
-const getOrderedKeysForAgent = (agent?: string): string[] => {
-  const allKeys = getAllAPIKeys();
-  if (allKeys.length === 0) return [];
-
-  // Xác định Key ưu tiên hàng đầu dựa trên Tác tử
-  let primaryKeyIndex = 0;
-  if (agent === 'Điều phối MAS' || agent === 'ORCHESTRATOR') {
-    primaryKeyIndex = 0; // Key 1
-  } else if (agent === 'Giải nhanh 1S' || agent === 'GIẢI NHANH 1S' || agent === 'GIAI_NHANH_1S') {
-    primaryKeyIndex = 1; // Key 2
-  } else if (agent === 'Gia sư AI' || agent === 'GIA SƯ AI' || agent === 'GIA_SU_AI') {
-    primaryKeyIndex = 2; // Key 3
-  } else if (agent === 'Luyện Skill' || agent === 'LUYỆN SKILL' || agent === 'LUYEN_SKILL') {
-    primaryKeyIndex = 3; // Key 4
-  }
-
-  // Nếu vị trí vượt quá số lượng Key thực tế có sẵn, dùng phép chia lấy dư
-  const validIndex = primaryKeyIndex % allKeys.length;
-
-  // Xoay vòng mảng: Đưa Key ưu tiên lên đầu, các Key còn lại xếp phía sau làm dự phòng
-  return [
-    ...allKeys.slice(validIndex),
-    ...allKeys.slice(0, validIndex)
-  ];
-};
-
-/**
- * Thử thực thi thao tác với Key ưu tiên, tự động luân chuyển sang Key dự phòng khi gặp lỗi
- */
-async function executeWithKeyRotation(agent: string | undefined, operation: (ai: GoogleGenAI) => Promise<any>): Promise<any> {
-  const keys = getOrderedKeysForAgent(agent);
-  
-  if (keys.length === 0) {
-    throw new Error("Chưa khai báo GEMINI_API_KEY trong Environment Variables của Vercel!");
-  }
-
-  let lastError: any = null;
-
-  for (let i = 0; i < keys.length; i++) {
-    const apiKey = keys[i];
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      return await operation(ai);
-    } catch (error: any) {
-      console.warn(`Key thứ ${i + 1} gặp sự cố (${error?.message || 'Lỗi kết nối'}), đang tự động luân chuyển sang Key tiếp theo...`);
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("Tất cả API Key đều gặp lỗi hoặc vượt quá giới hạn hạn mức (Quota).");
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { action, subject, agent, input, image, text, systemPrompt, responseFormat } = req.body || {};
+  const { subject, agentType, prompt, image } = req.body || {};
 
-  try {
-    // 1. Xử lý yêu cầu tóm tắt (SUMMARY)
-    if (action === 'SUMMARY') {
-      const summaryText = await executeWithKeyRotation('SUMMARY', async (ai) => {
-        const response = await ai.models.generateContent({
-          model: TEXT_MODEL,
-          contents: `Chỉ trả lời một câu duy nhất, cực kỳ ngắn gọn, và trọng tâm để đọc: \n${text || ''}`,
+  if (!prompt && !image) {
+    return res.status(400).json({ error: 'Thiếu dữ liệu đầu vào (prompt hoặc image)' });
+  }
+
+  const apiKeys = getApiKeys();
+  let lastError: any = null;
+
+  // Xoay vòng các API Key nếu gặp lỗi Quota/Busy
+  for (const apiKey of apiKeys) {
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const model = 'gemini-1.5-flash';
+
+      // Xây dựng System Prompt chuẩn hóa cho từng Tác tử
+      let systemInstruction = `Bạn là hệ thống AI giáo dục môn ${subject || 'Toán học'}. `;
+      
+      if (agentType === 'Điều phối MAS') {
+        systemInstruction += `Nhiệm vụ: Trích xuất, làm sạch đề bài từ input (ảnh/văn bản). YÊU CẦU CỐ ĐỊNH: Bắt buộc định dạng toàn bộ công thức toán/lý/hóa bằng LaTeX ($...$ cho inline và $$...$$ cho block). Xuất ra đề bài chuẩn xác 100% kèm sơ đồ tư duy tóm tắt ngắn gọn.`;
+      } else if (agentType === 'Giải nhanh 1S') {
+        systemInstruction += `Nhiệm vụ: Trả về kết quả/đáp số ngắn gọn nhất. Bắt buộc trả về đúng định dạng JSON duy nhất dạng: {"finalAnswer": "Nội dung đáp số hoặc đáp án chọn ngắn gọn kèm LaTeX"}. Không thêm lời dẫn ngoài JSON.`;
+      } else if (agentType === 'Gia sư AI') {
+        systemInstruction += `Nhiệm vụ: Đóng vai Gia sư AI giảng dạy theo phương pháp Socratic. Hướng dẫn giải chi tiết từng bước, gợi mở tư duy, dùng công thức LaTeX ($...$) hiển thị rõ ràng, sắc nét.`;
+      } else if (agentType === 'Luyện Skill') {
+        systemInstruction += `Nhiệm vụ: Tạo 2 bài tập tương tự kèm lời giải ngắn gọn. Bắt buộc trả về đúng định dạng JSON dạng: {"quizzes": [{"question": "...", "options": ["A...", "B...", "C...", "D..."], "answer": "...", "solution": "..."}]}. Tất cả công thức phải dùng LaTeX.`;
+      }
+
+      const contents: any[] = [];
+      
+      // Thêm ảnh nếu có
+      if (image && typeof image === 'string') {
+        const base64Data = image.includes(',') ? image.split(',')[1] : image;
+        const mimeType = image.includes('data:image/png') ? 'image/png' : 'image/jpeg';
+        contents.push({
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+          }
         });
-        return response.text || '';
-      });
-      return res.status(200).json({ text: summaryText });
-    }
+      }
 
-    // 2. Xử lý tác tử chính (PROCESS_TASK)
-    const safeSubject = subject || '';
-    const safeAgent = agent || '';
-    const safeSystemPrompt = systemPrompt || '';
-    const safeInput = input || text || '';
-
-    let promptContent = `Môn: ${safeSubject}. Chuyên gia: ${safeAgent}. Yêu cầu: ${safeSystemPrompt}.\nNội dung: ${safeInput}`;
-    
-    const parts: any[] = [{ text: promptContent }];
-    
-    // Đính kèm hình ảnh nếu có (Base64)
-    if (image) {
-      const base64Data = image.includes(',') ? image.split(',')[1] : image;
-      parts.unshift({
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: base64Data
-        }
-      });
-    }
-
-    const resultText = await executeWithKeyRotation(safeAgent, async (ai) => {
-      let generationConfig: any = { 
-        temperature: 0.2, 
-        topP: 0.8 
-      };
-
-      // Nếu yêu cầu định dạng JSON
-      if (responseFormat === 'json') {
-        generationConfig.responseMimeType = "application/json";
+      // Thêm văn bản prompt
+      if (prompt) {
+        contents.push({ text: prompt });
       }
 
       const response = await ai.models.generateContent({
-        model: TEXT_MODEL,
-        contents: parts,
-        config: generationConfig
+        model: model,
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.2,
+        }
       });
-      
-      return response.text || '';
-    });
 
-    return res.status(200).json({ text: resultText });
+      const textResult = response.text || '';
+      return res.status(200).json({ result: textResult });
 
-  } catch (error: any) {
-    console.error("Lỗi API Server Gemini:", error);
-    return res.status(500).json({ 
-      error: "Lỗi kết nối máy chủ AI: " + (error?.message || "Không xác định") 
-    });
+    } catch (err: any) {
+      console.warn(`API Key gặp lỗi, đang thử Key tiếp theo:`, err?.message || err);
+      lastError = err;
+    }
   }
+
+  return res.status(500).json({ 
+    error: 'Tất cả API Keys đều thất bại hoặc hết hạn quota.', 
+    details: lastError?.message || String(lastError) 
+  });
 }
