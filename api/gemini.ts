@@ -1,8 +1,8 @@
-// api/gemini.ts - Cấu hình tối ưu tốc độ tối đa cho gemini-3.5-flash
+// api/gemini.ts - Cấu hình ưu tiên mô hình gemini-3.5-flash
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Xử lý CORS
+  // Xu ly CORS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Thiếu dữ liệu bài tập hoặc hình ảnh' });
   }
 
-  // Lấy API Key từ biến môi trường Vercel/Vite
+  // Lay API Key tu bien moi truong Vercel/Vite
   const apiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
 
   if (!apiKey) {
@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // Danh sách ưu tiên gọi gemini-3.5-flash
+  // Danh sách ưu tiên gọi gemini-3.5-flash hàng đầu
   const modelsToTry = [
     'gemini-3.5-flash'
   ];
@@ -48,26 +48,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Prompt mặc định yêu cầu CHỈ LẤY ĐÁP ÁN, KHÔNG LỜI GIẢI
     parts.push({
-      text: prompt || 'Hãy giải bài tập trong ảnh/văn bản và CHỈ XUẤT RỦY NHẤT ĐÁP ÁN CUỐI CÙNG (không kèm lời giải hay các bước trung gian).',
+      text: prompt || 'Hãy trích xuất nội dung bài tập và giải chi tiết từng bước bằng Tiếng Việt.',
     });
-
-    // System instruction cứng ép AI trả về ngắn nhất có thể
-    const strictSystemInstruction = systemInstruction || 
-      'Bạn là chuyên gia giải nhanh trắc nghiệm. Nhiệm vụ duy nhất của bạn là đưa ra ĐÁP ÁN CUỐI CÙNG dạng: "ĐÁP ÁN CUỐI CÙNG: [Kết quả/Chọn A, B, C, D]". TUYỆT ĐỐI KHÔNG giải thích, KHÔNG nêu phương pháp, KHÔNG viết các bước giải.';
 
     const requestBody: any = {
       contents: [{ parts }],
-      systemInstruction: {
-        parts: [{ text: strictSystemInstruction }],
-      },
-      // Cấu hình tham số tối ưu tốc độ
-      generationConfig: {
-        temperature: 0.1,      // Giảm độ suy đoán ngẫu nhiên để chọn đáp án nhanh nhất
-        maxOutputTokens: 100,  // Tối đa 100 token (ngắt câu trả lời ngay khi ra xong đáp án)
-      }
     };
+
+    if (systemInstruction) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemInstruction }],
+      };
+    }
 
     let lastError = '';
 
@@ -88,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (textResult) {
             return res.status(200).json({ 
-              text: textResult.trim(), 
+              text: textResult, 
               modelUsed: model 
             });
           }
