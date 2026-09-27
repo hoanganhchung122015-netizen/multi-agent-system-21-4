@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 // Thầy dán API Key hoạt động ổn định nhất của thầy vào đây để làm Key ưu tiên/backup
-const HARDCODED_BACKUP_KEY = 'AIzaSy...THAY_KEY_CHUAN_CUA_THAY_VAO_DAY...';
+const HARDCODED_BACKUP_KEY = 'AQ.Ab8RN6JJzHjMAaYAH_HUatbgusighHYhkr39JWlF-uq7lKn86A';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
