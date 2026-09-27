@@ -2,7 +2,7 @@ import { createWorker } from 'tesseract.js';
 
 /**
  * Trích xuất văn bản từ hình ảnh Base64 ngay trên Trình duyệt (Client-side)
- * Tiết kiệm 100% Token hình ảnh gửi lên Gemini API.
+ * Tiết kiệm Token hình ảnh gửi lên Gemini API.
  */
 export const extractTextFromImageClient = async (base64Image: string): Promise<string> => {
   try {
@@ -11,9 +11,9 @@ export const extractTextFromImageClient = async (base64Image: string): Promise<s
     await worker.terminate();
     
     const extractedText = ret.data.text.trim();
-    return extractedText || "Không thể trích xuất văn bản từ hình ảnh.";
+    return extractedText.length > 10 ? extractedText : "";
   } catch (error) {
-    console.warn("Lỗi OCR tại máy khách, chuyển sang luồng dự phòng:", error);
+    console.warn("Lỗi OCR client, tự động chuyển sang luồng dự phòng nhận diện trực tiếp bằng AI Vision:", error);
     return "";
   }
 };
