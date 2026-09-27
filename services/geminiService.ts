@@ -1,4 +1,4 @@
-import { Subject, AgentType, Professor1Result, Professor3QuizResult } from '../types';
+import { Subject, AgentType, Professor1Result, Professor3QuizResult } from './src/types';
 
 /**
  * Hàm gọi chung tới Vercel Serverless Function /api/gemini
