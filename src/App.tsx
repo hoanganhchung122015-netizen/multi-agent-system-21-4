@@ -4,6 +4,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
+
 import { 
   Subject, 
   AgentType, 
@@ -11,14 +12,16 @@ import {
   Professor1Result, 
   Professor3QuizResult, 
   DiaryEntry 
-} from './types';
-import { extractTextFromImageClient } from './services/ocrService';
+} from './types'; // Dùng ./types
+
+import { extractTextFromImageClient } from './services/ocrService'; // Dùng ./services/ocrService
 import { 
   runOrchestrator, 
   runGiaiNhanh1S, 
   runGiaSuAI, 
   runLuyenSkill 
-} from './services/geminiService';
+} from './services/geminiService'; // Dùng ./services/geminiService
+
 
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState<Subject>(Subject.MATH);
